@@ -25,6 +25,7 @@ import {
 } from "~/db/schema";
 import { eq, ne, or, and, isNull, notExists, sql, desc } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
+import { triggerDiscussionReplyPrototype } from "~/lib/knock.prototype.server";
 
 type QueuedQuestion = {
   id: number;
@@ -149,11 +150,14 @@ function createComment(
     }
   }
 
-  return db
+  const created = db
     .insert(comments)
     .values({ userId, lessonId, parentId, body: trimmed })
     .returning()
     .get();
+  // PROTOTYPE (knock spike): fire the Discussion Reply Notification.
+  triggerDiscussionReplyPrototype(created);
+  return created;
 }
 
 // A question sitting this long without an answer gets called out visually.

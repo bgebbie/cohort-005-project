@@ -55,6 +55,7 @@ import { data, isRouteErrorResponse } from "react-router";
 import { z } from "zod";
 import { COUNTRIES } from "~/lib/ppp";
 import { parseFormData, parseParams } from "~/lib/validation";
+import { triggerDiscussionReplyPrototype } from "~/lib/knock.prototype.server";
 
 const lessonParamsSchema = z.object({
   slug: z.string().min(1),
@@ -427,11 +428,14 @@ function createComment(
     }
   }
 
-  return db
+  const created = db
     .insert(comments)
     .values({ userId, lessonId, parentId, body: trimmed })
     .returning()
     .get();
+  // PROTOTYPE (knock spike): fire the Discussion Reply Notification.
+  triggerDiscussionReplyPrototype(created);
+  return created;
 }
 
 function updateComment(commentId: number, userId: number, body: string) {
