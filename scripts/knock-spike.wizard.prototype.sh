@@ -208,7 +208,7 @@ KNOCK_DASH="https://dashboard.knock.app"
 APP="http://localhost:5173"
 SPIKE="$APP/prototype/knock"
 
-TOTAL_STAGES=7
+TOTAL_STAGES=8
 
 banner "Knock spike: dashboard setup + four checks"
 
@@ -238,6 +238,23 @@ step "On the workflow page, open the '...' menu → Manage workflow."
 step "Add the category, exactly:  new-enrollment   (case sensitive)"
 step "Commit the workflow to Development."
 pause "Press Enter once new-enrollment is committed with its category"
+
+# ── 2b ───────────────────────────────────────────────────────────────────
+stage "Verify: can our .env key see both workflows?"
+say "This triggers both workflows for a throwaway Knock user, using the secret key in .env."
+while ! npx tsx --env-file=.env scripts/knock-wf-check.prototype.ts; do
+  printf '\n'
+  warn "Knock can't find a workflow in the environment our .env key belongs to. Check:"
+  step "The environment switcher (top left) says Development."
+  step "Workflows list: the KEY column (not the name) is exactly discussion-reply / new-enrollment."
+  step "Each workflow is committed. Open it, and if it shows uncommitted changes, click Commit."
+  step "Platform → API keys (in Development): the secret key starts with sk_DTXb2."
+  note "  If it doesn't, the .env keys come from another environment. Either build the"
+  note "  workflows there, or put Development's keys (and its signing key and feed"
+  note "  channel id) in .env and restart the dev server."
+  confirm "Fixed something? Re-check now" || break
+done
+pause
 
 # ── 3 ────────────────────────────────────────────────────────────────────
 stage "Knock: make new-enrollment off by default"
@@ -273,9 +290,12 @@ write_env CHECK1_NOTES "$CHECK1_NOTES"
 stage "Check 2: a real reply triggers a Notification into the feed"
 step "In the DevUI, switch to Sarah Chen (instructor)."
 open_url "$APP/instructor/questions"
-step "Find Emma Wilson's question on 'Your First TypeScript Program' and post a reply."
+step "This page lists only UNANSWERED questions. Reply to Olivia Martinez's"
+step "question on 'Function Types' (\"Why does this fail to infer?...\")."
+note "Once answered it leaves the list. To run this again, use James Park's question"
+note "on 'Primitive Types' and switch to James instead of Olivia below."
 note "The dev server terminal should log: [knock prototype] discussion-reply run <id>"
-step "Switch to Emma Wilson in the DevUI, then open the spike page:"
+step "Switch to Olivia Martinez in the DevUI, then open the spike page:"
 open_url "$SPIKE"
 step "Click 'Refresh feed'. A discussion-reply row should appear,"
 step "with actor Sarah Chen and lesson_title in its data."
@@ -286,7 +306,7 @@ write_env CHECK2_NOTES "$CHECK2_NOTES"
 
 # ── 6 ────────────────────────────────────────────────────────────────────
 stage "Check 3: headless feed API: list, counts, read/seen"
-say "Stay on Emma Wilson's spike page."
+say "Stay on Olivia Martinez's spike page."
 step "Note unread_count and unseen_count in the meta block."
 step "Click 'seen' on the row. unseen_count should drop and the seen column should tick."
 step "Click 'read'. unread_count should drop. Click 'unread' and it should rise again."
