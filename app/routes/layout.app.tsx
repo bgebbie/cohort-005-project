@@ -5,6 +5,19 @@ import { DevUI } from "~/components/dev-ui";
 import { Toaster } from "sonner";
 import { getCurrentUserId, getDevCountry } from "~/lib/session";
 import { getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
+// PROTOTYPE (#65): Notification Feed variants
+import {
+  knockPublicConfig,
+  knockUserId,
+  signKnockUserToken,
+} from "~/lib/knock-prototype.server";
+import {
+  FEED_VARIANTS,
+  FeedError,
+  NotificationFeedProvider,
+  useFeedVariant,
+} from "~/components/notification-feed-prototype";
+import { PrototypeSwitcher } from "~/components/prototype-switcher";
 import { eq, and, or, sql, desc } from "drizzle-orm";
 import { db } from "~/db";
 import {
@@ -213,6 +226,16 @@ export async function loader({ request }: Route.LoaderArgs) {
     countryTierInfo,
     countries: COUNTRIES,
     isTeamAdmin: currentUserId ? isTeamAdmin(currentUserId) : false,
+    // PROTOTYPE (#65): a signed Knock user token for whoever the DevUI selected.
+    knockFeed: currentUser
+      ? {
+          knockUserId: knockUserId(currentUser.id),
+          userToken: await signKnockUserToken(currentUser.id),
+          ...knockPublicConfig,
+          role: currentUser.role,
+          isTeamAdmin: isTeamAdmin(currentUser.id),
+        }
+      : null,
   };
 }
 
@@ -225,9 +248,12 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     countryTierInfo,
     countries,
     isTeamAdmin: userIsTeamAdmin,
+    knockFeed,
   } = loaderData;
+  const feedVariant = useFeedVariant();
 
   return (
+    <NotificationFeedProvider config={knockFeed}>
     <div className="flex h-screen overflow-hidden">
       <Sidebar
         currentUser={currentUser}
@@ -245,6 +271,17 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         countries={countries}
       />
       <Toaster position="bottom-right" richColors closeButton />
+      {knockFeed && (
+        <>
+          <FeedError />
+          <PrototypeSwitcher
+            variants={FEED_VARIANTS}
+            current={feedVariant}
+            seedAction="/prototype/notifications/seed"
+          />
+        </>
+      )}
     </div>
+    </NotificationFeedProvider>
   );
 }
