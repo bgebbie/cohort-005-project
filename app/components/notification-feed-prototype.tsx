@@ -11,8 +11,8 @@
 // Real Knock: the feed, counts, seen/read/archived all go browser → Knock with
 // the public key + the signed user token. Only the two committed workflows
 // (discussion-reply, new-enrollment) exist in Knock. Every other catalogue
-// Notification is a client-side FIXTURE row: tagged "fixture", never counted,
-// read state kept in memory.
+// Notification is a client-side FIXTURE row: tagged "fixture", read state kept
+// in memory. Displayed counts = Knock meta + fixture rows, so they match the list.
 import {
   createContext,
   useCallback,
@@ -239,6 +239,8 @@ function timeAgo(iso: string) {
 type Feed = {
   items: FeedItem[];
   meta: FeedMeta | null;
+  unread: number;
+  unseen: number;
   error: string | null;
   markSeen: (items: FeedItem[]) => void;
   markRead: (items: FeedItem[]) => void;
@@ -348,6 +350,8 @@ export function NotificationFeedProvider({
   const feed: Feed = {
     items,
     meta,
+    unread: (meta?.unread_count ?? 0) + fixtures.filter((f) => !f.read_at).length,
+    unseen: (meta?.unseen_count ?? 0) + fixtures.filter((f) => !f.seen_at).length,
     error,
     refresh,
     markSeen: (xs) => batch("seen", xs.filter((x) => !x.seen_at)),
@@ -427,7 +431,7 @@ function VariantA() {
   const feed = useFeed();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const unseen = feed.meta?.unseen_count ?? 0;
+  const unseen = feed.unseen;
 
   useEffect(() => {
     if (open) feed.markSeen(feed.items);
@@ -510,7 +514,7 @@ function VariantA() {
 function VariantB() {
   const feed = useFeed();
   const [open, setOpen] = useState(false);
-  const unread = feed.meta?.unread_count ?? 0;
+  const unread = feed.unread;
   const fresh = feed.items.filter((i) => !i.read_at);
   const earlier = feed.items.filter((i) => i.read_at);
 
@@ -625,7 +629,7 @@ function VariantB() {
 
 function VariantCNavItem() {
   const feed = useFeed();
-  const unread = feed.meta?.unread_count ?? 0;
+  const unread = feed.unread;
   return (
     <Link
       to="/prototype/notifications"
@@ -671,7 +675,8 @@ export function InboxPage() {
         <div>
           <h1 className="text-2xl font-bold">Notifications</h1>
           <p className="text-sm text-muted-foreground">
-            {feed.meta?.unread_count ?? 0} unread · {feed.meta?.total_count ?? 0} from Knock
+            {feed.unread} unread · {feed.meta?.total_count ?? 0} from Knock,{" "}
+            {feed.items.filter((i) => i.fixture).length} fixtures
           </p>
         </div>
         <button
