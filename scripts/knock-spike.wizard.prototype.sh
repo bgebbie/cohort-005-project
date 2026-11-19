@@ -203,7 +203,7 @@ run_wizard() {
 # PROTOTYPE — throwaway wizard for "Does Knock hold up against Cadence?" (#46).
 # Nothing secret is captured. Check outcomes go to a scratch results file,
 # not .env, so the agent can read them back when writing the resolution.
-ENV_FILE="${ENV_FILE:-.knock-spike-results.env}"
+ENV_FILE=".knock-spike-results.env"  # the library defaulted it to .env; override
 KNOCK_DASH="https://dashboard.knock.app"
 APP="http://localhost:5173"
 SPIKE="$APP/prototype/knock"
