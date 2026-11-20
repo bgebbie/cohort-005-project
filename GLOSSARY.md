@@ -112,3 +112,7 @@ _Avoid_: Alert, Message, Activity
 **Notification Feed**:
 The place inside Cadence where a person sees their Notifications.
 _Avoid_: Inbox, Activity feed
+
+**Notification Preference**:
+A person's choice of whether they get a group of related Notifications on a channel. Notifications about a person's own Refund Request can't be turned off.
+_Avoid_: Subscription, Notification setting
