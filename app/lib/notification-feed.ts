@@ -67,6 +67,12 @@ export interface NotificationFeed {
   markAllAsSeen(): void;
   /** Marks every Notification read, loaded or not. */
   markAllAsRead(): void;
+  /**
+   * Marks one Notification read, best-effort. Does nothing if it's already
+   * read or isn't in the feed. Seen isn't read: opening the popover never
+   * marks a row read.
+   */
+  markRead(notificationId: string): void;
 }
 
 /** What the browser needs to read the signed-in person's feed from Knock. */
@@ -106,6 +112,7 @@ export function emptyNotificationFeed(
     loadMore: () => {},
     markAllAsSeen: () => {},
     markAllAsRead: () => {},
+    markRead: () => {},
   };
 }
 
