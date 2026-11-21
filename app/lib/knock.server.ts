@@ -1,4 +1,4 @@
-import Knock from "@knocklabs/node";
+import Knock, { signUserToken } from "@knocklabs/node";
 import type {
   NotificationName,
   NotificationPort,
@@ -64,4 +64,20 @@ export function knockNotificationPort(secretApiKey: string): NotificationPort {
       );
     },
   };
+}
+
+const FEED_TOKEN_SECONDS = 60 * 60;
+
+/**
+ * Signs an RS256 user token for the browser's Notification Feed. Its `sub` is
+ * the person's Knock user id, so it can't read anyone else's feed.
+ */
+export function signFeedUserToken(
+  signingKey: string,
+  cadenceUserId: number
+): Promise<string> {
+  return signUserToken(knockUserId(cadenceUserId), {
+    signingKey,
+    expiresInSeconds: FEED_TOKEN_SECONDS,
+  });
 }
