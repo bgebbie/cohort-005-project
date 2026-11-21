@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { Bell } from "lucide-react";
+import { Bell, Settings } from "lucide-react";
+import { Link } from "react-router";
 import type {
   NotificationFeed,
   NotificationFeedSnapshot,
@@ -41,6 +42,15 @@ export function NotificationPopover({
         >
           Mark all as read
         </button>
+        <Link
+          to="/settings#notifications"
+          onClick={close}
+          aria-label="Notification preferences"
+          title="Notification preferences"
+          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <Settings className="size-4" />
+        </Link>
       </div>
       <div className="flex-1 overflow-y-auto">
         <NotificationList feed={feed} snapshot={snapshot} close={close} />

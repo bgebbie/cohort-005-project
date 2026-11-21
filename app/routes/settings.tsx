@@ -19,11 +19,38 @@ import { formatPrice } from "~/lib/utils";
 import { listRefundRequestsForBuyer } from "~/lib/refunds.server";
 import { defaultNotificationPort } from "~/lib/notifications.server";
 import { updateProfile } from "~/lib/users.server";
+import {
+  listNotificationSwitches,
+  saveNotificationPreference,
+  type NotificationSwitch,
+} from "~/lib/notification-preferences.server";
+import {
+  NotificationPreferencesCard,
+  SET_NOTIFICATION_PREFERENCE,
+  type NotificationPreferenceSaveResult,
+} from "~/components/notifications/notification-preferences-card";
 
-const settingsSchema = z.object({
-  name: z.string().trim().min(1, "Name cannot be empty."),
-  bio: z.string().trim().optional(),
-});
+const UPDATE_PROFILE = "update-profile";
+
+const settingsSchema = z.discriminatedUnion("intent", [
+  z.object({
+    intent: z.literal(UPDATE_PROFILE),
+    name: z.string().trim().min(1, "Name cannot be empty."),
+    bio: z.string().trim().optional(),
+  }),
+  z.object({
+    intent: z.literal(SET_NOTIFICATION_PREFERENCE),
+    category: z.enum([
+      "RefundRequestUpdates",
+      "OpenRefundRequests",
+      "SeatClaims",
+      "Enrollments",
+      "DiscussionQuestions",
+      "DiscussionReplies",
+    ]),
+    enabled: z.enum(["true", "false"]).transform((value) => value === "true"),
+  }),
+]);
 
 export function meta() {
   return [
@@ -53,6 +80,23 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const refundRequests = listRefundRequestsForBuyer(db, currentUserId);
 
+  // A vendor outage shouldn't take profile editing down with it, so the card
+  // says it couldn't load instead.
+  let notificationSwitches: NotificationSwitch[] | null;
+  try {
+    notificationSwitches = await listNotificationSwitches(
+      db,
+      defaultNotificationPort(),
+      currentUserId
+    );
+  } catch (error) {
+    console.error(
+      `[notifications] reading preferences for user ${currentUserId} failed:`,
+      error
+    );
+    notificationSwitches = null;
+  }
+
   return {
     user: {
       id: currentUser.id,
@@ -62,6 +106,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       role: currentUser.role,
     },
     refundRequests,
+    notificationSwitches,
   };
 }
 
@@ -88,14 +133,55 @@ export async function action({ request }: Route.ActionArgs) {
     return data({ errors: parsed.errors }, { status: 400 });
   }
 
+  if (parsed.data.intent === SET_NOTIFICATION_PREFERENCE) {
+    return savePreference(
+      currentUser.id,
+      parsed.data.category,
+      parsed.data.enabled
+    );
+  }
+
   const { name, bio } = parsed.data;
 
   await updateProfile(db, defaultNotificationPort(), currentUser.id, name, bio);
   return { success: true };
 }
 
+/**
+ * A failed save is returned, not thrown: a fetcher's thrown response would
+ * replace the page with the ErrorBoundary, and the switch has to go back with
+ * a toast instead.
+ */
+async function savePreference(
+  userId: number,
+  category: NotificationSwitch["category"],
+  enabled: boolean
+) {
+  let result;
+  try {
+    result = await saveNotificationPreference(
+      db,
+      defaultNotificationPort(),
+      userId,
+      category,
+      enabled
+    );
+  } catch (error) {
+    console.error(
+      `[notifications] saving ${category} for user ${userId} failed:`,
+      error
+    );
+    return data<NotificationPreferenceSaveResult>(
+      { ok: false, error: "Couldn't save your Notification preference." },
+      { status: 502 }
+    );
+  }
+  if (!result.ok) throw data(result.error, { status: result.status });
+  return data<NotificationPreferenceSaveResult>({ ok: true });
+}
+
 export default function Settings({ loaderData }: Route.ComponentProps) {
-  const { user, refundRequests } = loaderData;
+  const { user, refundRequests, notificationSwitches } = loaderData;
   const openCount = refundRequests.filter(
     (refundRequest) => refundRequest.status === RefundStatus.Open
   ).length;
@@ -136,6 +222,7 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
         </CardHeader>
         <CardContent>
           <fetcher.Form method="post" className="space-y-4">
+            <input type="hidden" name="intent" value={UPDATE_PROFILE} />
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input
@@ -184,6 +271,8 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
           </fetcher.Form>
         </CardContent>
       </Card>
+
+      <NotificationPreferencesCard switches={notificationSwitches} />
 
       {refundRequests.length > 0 && (
         <Card className="mt-8 max-w-md">
