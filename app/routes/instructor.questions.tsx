@@ -14,6 +14,7 @@ import { AlertTriangle, CheckCircle2, ExternalLink } from "lucide-react";
 import { cn, daysSince, formatRelativeTime } from "~/lib/utils";
 import { MAX_COMMENT_LENGTH } from "~/lib/comments";
 import { createComment, getComment } from "~/lib/comments.server";
+import { defaultNotificationPort } from "~/lib/notifications.server";
 import { parseFormData } from "~/lib/validation";
 import { db } from "~/db";
 import {
@@ -164,8 +165,9 @@ export async function action({ request }: Route.ActionArgs) {
   const access = await requireStaff(request, course.courseId);
 
   try {
-    const created = createComment(
+    const created = await createComment(
       db,
+      defaultNotificationPort(),
       access.userId!,
       question.lessonId,
       question.id,

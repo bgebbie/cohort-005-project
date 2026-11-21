@@ -1,15 +1,25 @@
 import { eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "~/db/schema";
-import { comments, lessons } from "~/db/schema";
-import { MAX_COMMENT_LENGTH, MIN_COMMENT_LENGTH } from "~/lib/comments";
+import { comments, courses, lessons, modules, users } from "~/db/schema";
+import {
+  commentAnchor,
+  MAX_COMMENT_LENGTH,
+  MIN_COMMENT_LENGTH,
+} from "~/lib/comments";
+import {
+  notify,
+  type NotificationPort,
+  type NotificationUser,
+} from "~/lib/notifications.server";
 
 // ─── Comments ───
 // Discussion Questions and Discussion Replies on a lesson: posting, editing and
 // soft-deleting them. See GLOSSARY.md for the language.
 //
 // Every function takes the database first and `now` last, so tests can hand in
-// an in-memory one. Uses positional parameters (project convention).
+// an in-memory one; a function that sends Notifications takes the
+// NotificationPort second. Uses positional parameters (project convention).
 
 export type Db = BetterSQLite3Database<typeof schema>;
 
@@ -46,15 +56,18 @@ function checkBody(body: string): BodyCheck {
  * Discussion Question, unless the course's Instructor wrote it); with one it is
  * a Discussion Reply, and the parent must be a top-level comment on the same
  * lesson.
+ *
+ * A Discussion Reply notifies the question's author, unless they wrote it.
  */
-export function createComment(
+export async function createComment(
   db: Db,
+  notifications: NotificationPort,
   authorId: number,
   lessonId: number,
   parentId: number | null,
   body: string,
   now: Date
-): CommentResult {
+): Promise<CommentResult> {
   const checked = checkBody(body);
   if (!checked.ok) return checked;
 
@@ -67,8 +80,9 @@ export function createComment(
     return { ok: false, status: 404, error: "Lesson not found" };
   }
 
+  let parent: Comment | undefined;
   if (parentId !== null) {
-    const parent = getComment(db, parentId);
+    parent = getComment(db, parentId);
     if (!parent) {
       return { ok: false, status: 404, error: "Parent comment not found" };
     }
@@ -100,7 +114,71 @@ export function createComment(
     .returning()
     .get();
 
+  // Never about the recipient's own action.
+  if (parent && parent.userId !== authorId) {
+    await notifyDiscussionReply(db, notifications, comment, parent.userId);
+  }
+
   return { ok: true, comment };
+}
+
+/** Sends the Discussion Reply Notification to the question's author. */
+async function notifyDiscussionReply(
+  db: Db,
+  notifications: NotificationPort,
+  reply: Comment,
+  questionAuthorId: number
+) {
+  const place = db
+    .select({
+      lessonTitle: lessons.title,
+      courseTitle: courses.title,
+      courseSlug: courses.slug,
+    })
+    .from(lessons)
+    .innerJoin(modules, eq(modules.id, lessons.moduleId))
+    .innerJoin(courses, eq(courses.id, modules.courseId))
+    .where(eq(lessons.id, reply.lessonId))
+    .get()!;
+  const replier = getNotificationUser(db, reply.userId);
+
+  await notify(notifications, {
+    notification: "DiscussionReply",
+    recipients: [getNotificationUser(db, questionAuthorId)],
+    actor: replier,
+    data: {
+      replierName: replier.name,
+      lessonTitle: place.lessonTitle,
+      courseTitle: place.courseTitle,
+      snippet: snippet(reply.body),
+      link: `/courses/${place.courseSlug}/lessons/${reply.lessonId}#${commentAnchor(reply.id)}`,
+      commentId: reply.id,
+    },
+    idempotencyKey: `discussion-reply:${reply.id}`,
+  });
+}
+
+const SNIPPET_LENGTH = 140;
+
+/** A comment body on one line, cut to fit a Notification. */
+function snippet(body: string): string {
+  const oneLine = body.replace(/\s+/g, " ").trim();
+  return oneLine.length <= SNIPPET_LENGTH
+    ? oneLine
+    : `${oneLine.slice(0, SNIPPET_LENGTH - 1).trimEnd()}…`;
+}
+
+function getNotificationUser(db: Db, userId: number): NotificationUser {
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      avatarUrl: users.avatarUrl,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get()!;
 }
 
 /** Edits the body of a live comment. Only its author may; staff cannot edit anyone else's. */
