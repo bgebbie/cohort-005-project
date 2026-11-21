@@ -49,6 +49,14 @@ export const KNOCK_WORKFLOWS: Record<
     workflow: "refund-request-declined",
     category: KNOCK_CATEGORIES.RefundRequestUpdates,
   },
+  DiscussionQuestion: {
+    workflow: "discussion-question",
+    category: KNOCK_CATEGORIES.DiscussionQuestions,
+  },
+  SeatClaimed: {
+    workflow: "seat-claimed",
+    category: KNOCK_CATEGORIES.SeatClaims,
+  },
 };
 
 /** A Cadence user's id in Knock. The signed user token's `sub` uses it too. */

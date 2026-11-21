@@ -97,6 +97,28 @@ export type RefundRequestDeclinedData = {
   link: string;
 };
 
+/** A Discussion Question on a course → the course's Instructor. */
+export type DiscussionQuestionData = {
+  askerName: string;
+  lessonTitle: string;
+  courseTitle: string;
+  snippet: string;
+  /** The lesson URL with the question's anchor. */
+  link: string;
+  commentId: number;
+};
+
+/** A Seat on a Team Licence was claimed → the Team Licence's buyer. */
+export type SeatClaimedData = {
+  claimerName: string;
+  courseTitle: string;
+  /** Unclaimed Seats still available on the Team Licence after this claim. */
+  seatsLeft: number;
+  /** The team page. */
+  link: string;
+  seatId: number;
+};
+
 /** Every Notification Cadence sends, and the data its trigger carries. */
 export type NotificationCatalogue = {
   DiscussionReply: DiscussionReplyData;
@@ -104,6 +126,8 @@ export type NotificationCatalogue = {
   OpenRefundRequest: OpenRefundRequestData;
   RefundRequestApproved: RefundRequestApprovedData;
   RefundRequestDeclined: RefundRequestDeclinedData;
+  DiscussionQuestion: DiscussionQuestionData;
+  SeatClaimed: SeatClaimedData;
 };
 
 export type NotificationName = keyof NotificationCatalogue;

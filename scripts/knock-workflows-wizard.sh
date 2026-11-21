@@ -238,6 +238,12 @@ WORKFLOWS+=("refund-request-approved|refund-request-updates|Your refund request 
 # Refund Request declined: the deciding Platform Admin → the buyer.
 WORKFLOWS+=("refund-request-declined|refund-request-updates|Your refund request for **{{ data.courseTitle }}** was declined: {{ data.decisionNote }} You can raise a new refund request.")
 
+# Discussion Question: a top-level comment by anyone but the course's Instructor → that Instructor.
+WORKFLOWS+=("discussion-question|discussion-questions|**{{ data.askerName }}** asked a question in {{ data.lessonTitle }}")
+
+# Seat claimed: a Seat on a Team Licence was claimed → the Team Licence's buyer.
+WORKFLOWS+=("seat-claimed|seat-claims|**{{ data.claimerName }}** claimed a Seat on {{ data.courseTitle }}. {{ data.seatsLeft }} left.")
+
 # ── End of workflow table ─────────────────────────────────────────────────
 
 TOTAL_STAGES=$(( ${#WORKFLOWS[@]} + 2 ))
