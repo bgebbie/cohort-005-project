@@ -417,14 +417,13 @@ export async function raiseRefundRequest(
   });
 
   // Whoever is a Platform Admin right now, since role isn't synced to Knock.
-  // Never about the recipient's own action, so a buyer who is one is left out.
+  // notify leaves out a buyer who is one: never about their own action.
   const platformAdmins = db
     .select({ id: users.id })
     .from(users)
     .where(eq(users.role, UserRole.Admin))
     .orderBy(asc(users.id))
     .all()
-    .filter((admin) => admin.id !== buyer.id)
     .flatMap((admin) => getNotificationUser(db, admin.id) ?? []);
 
   if (platformAdmins.length > 0) {
@@ -840,8 +839,6 @@ async function notifyDecision(
   if (!decided || !buyer || !decider) return;
 
   const { purchase, courseTitle } = decided;
-  // Never about the recipient's own action.
-  if (decider.id === buyer.id) return;
 
   const purchaseKind = kindOf(getSeats(db, purchase.id));
   const recipients = [buyer];

@@ -6,6 +6,7 @@ import {
   notify,
   setNotificationPreference,
   syncUser,
+  type NotificationTrigger,
 } from "./notifications.server";
 
 describe("noopNotificationPort", () => {
@@ -36,6 +37,64 @@ describe("noopNotificationPort", () => {
 });
 
 const ADA = { id: 7, name: "Ada", email: "ada@example.com", avatarUrl: null };
+const GRACE = {
+  id: 8,
+  name: "Grace",
+  email: "grace@example.com",
+  avatarUrl: null,
+};
+const LINUS = {
+  id: 9,
+  name: "Linus",
+  email: "linus@example.com",
+  avatarUrl: null,
+};
+
+function openRefundRequest(
+  recipients: (typeof ADA)[],
+  actor: typeof ADA | null
+): NotificationTrigger {
+  return {
+    notification: "OpenRefundRequest",
+    recipients,
+    actor,
+    data: {
+      refundRequestId: 3,
+      buyerName: actor?.name ?? "Someone",
+      courseTitle: "Test Course",
+      amount: "$79.00",
+      reason: "Not for me.",
+      link: "/admin/refunds",
+    },
+    idempotencyKey: "open-refund-request:3",
+  };
+}
+
+describe("notify: never about the recipient's own action", () => {
+  it("leaves the actor out and still tells everyone else", async () => {
+    const port = fakeNotificationPort();
+
+    await notify(port, openRefundRequest([ADA, GRACE, LINUS], GRACE));
+
+    expect(port.triggers.map((t) => t.recipients)).toEqual([[ADA, LINUS]]);
+  });
+
+  it("sends nothing when the actor is the only recipient", async () => {
+    const port = fakeNotificationPort();
+
+    await notify(port, openRefundRequest([ADA], ADA));
+
+    expect(port.triggers).toEqual([]);
+  });
+
+  it("tells every recipient when Cadence itself is the sender", async () => {
+    const port = fakeNotificationPort();
+
+    await notify(port, openRefundRequest([ADA, GRACE], null));
+
+    expect(port.triggers.map((t) => t.recipients)).toEqual([[ADA, GRACE]]);
+  });
+});
 
 describe("syncUser", () => {
   it("identifies the user and gives someone with no preferences Enrollments off and everything else on, on the feed", async () => {

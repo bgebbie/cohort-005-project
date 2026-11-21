@@ -37,11 +37,11 @@ const CATEGORY_COPY: Record<
   },
   DiscussionQuestions: {
     label: "Discussion Questions",
-    description: "When someone asks a question on one of your courses.",
+    description: "When someone asks a Discussion Question on one of your courses.",
   },
   DiscussionReplies: {
     label: "Discussion Replies",
-    description: "When someone replies to a question you asked.",
+    description: "When someone replies to a Discussion Question you asked.",
   },
 };
 

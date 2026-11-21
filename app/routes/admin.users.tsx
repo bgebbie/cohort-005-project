@@ -106,7 +106,14 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (intent === "update-user") {
     const { userId, name, email } = parsed.data;
-    await editUser(db, defaultNotificationPort(), userId, name, email);
+    const user = await editUser(
+      db,
+      defaultNotificationPort(),
+      userId,
+      name,
+      email
+    );
+    if (!user) throw data("User not found.", { status: 404 });
     return { success: true };
   }
 

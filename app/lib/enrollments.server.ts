@@ -217,8 +217,6 @@ async function notifySeatClaimed(
   const buyer = teamLicence && getNotificationUser(db, teamLicence.buyerId);
   const claimer = getNotificationUser(db, claimerId);
   if (!teamLicence || !buyer || !claimer) return;
-  // Never about the recipient's own action.
-  if (buyer.id === claimer.id) return;
 
   await notify(notifications, {
     notification: "SeatClaimed",
@@ -253,8 +251,6 @@ async function notifyEnrolled(
   const instructor = course && getNotificationUser(db, course.instructorId);
   const student = getNotificationUser(db, enrollment.userId);
   if (!course || !instructor || !student) return;
-  // Never about the recipient's own action.
-  if (instructor.id === student.id) return;
 
   await notify(notifications, {
     notification: "NewEnrollment",

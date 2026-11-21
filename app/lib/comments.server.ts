@@ -8,6 +8,7 @@ import {
 import {
   archiveCommentNotifications,
   notify,
+  recipientsOtherThan,
   type NotificationPort,
 } from "~/lib/notifications.server";
 import type { Db } from "~/lib/refunds.server";
@@ -123,7 +124,7 @@ export async function createComment(
     if (isDiscussionQuestion(comment, place)) {
       await notifyDiscussionQuestion(db, notifications, comment, place);
     }
-  } else if (replyNotifies(comment, parent, place)) {
+  } else if (isDiscussionQuestion(parent, place)) {
     await notifyDiscussionReply(
       db,
       notifications,
@@ -142,19 +143,16 @@ function isDiscussionQuestion(comment: Comment, place: Place): boolean {
 }
 
 /**
- * A reply notifies when it's a Discussion Reply (under a Discussion Question)
- * from someone other than the question's author: a Notification is never
- * about the recipient's own action.
+ * Whether posting this comment sent a Notification. A reply is a Discussion
+ * Reply only under a Discussion Question, and `notify` drops the actor, so a
+ * reply to your own question sent nothing.
  */
-function replyNotifies(reply: Comment, parent: Comment, place: Place): boolean {
-  return isDiscussionQuestion(parent, place) && parent.userId !== reply.userId;
-}
-
-/** Whether posting this comment sent a Notification. */
 function causedNotification(db: Db, comment: Comment, place: Place): boolean {
   if (comment.parentId === null) return isDiscussionQuestion(comment, place);
   const parent = getComment(db, comment.parentId);
-  return parent !== undefined && replyNotifies(comment, parent, place);
+  if (!parent || !isDiscussionQuestion(parent, place)) return false;
+  const recipients = [{ id: parent.userId }];
+  return recipientsOtherThan(recipients, { id: comment.userId }).length > 0;
 }
 
 /** Where a comment sits: its lesson and course, and the course's Instructor. */
