@@ -226,6 +226,9 @@ WORKFLOWS=()
 # Discussion Reply: a reply to someone's Discussion Question → its author.
 WORKFLOWS+=("discussion-reply|discussion-replies|**{{ data.replierName }}** replied to your question in {{ data.lessonTitle }}")
 
+# Discussion Question: a top-level comment by anyone but the course's Instructor → that Instructor.
+WORKFLOWS+=("discussion-question|discussion-questions|**{{ data.askerName }}** asked a question in {{ data.lessonTitle }}")
+
 # ── End of workflow table ─────────────────────────────────────────────────
 
 TOTAL_STAGES=$(( ${#WORKFLOWS[@]} + 2 ))

@@ -33,6 +33,10 @@ export const KNOCK_WORKFLOWS: Record<
     workflow: "discussion-reply",
     category: KNOCK_CATEGORIES.DiscussionReplies,
   },
+  DiscussionQuestion: {
+    workflow: "discussion-question",
+    category: KNOCK_CATEGORIES.DiscussionQuestions,
+  },
 };
 
 /** A Cadence user's id in Knock. The signed user token's `sub` uses it too. */

@@ -49,9 +49,21 @@ export type DiscussionReplyData = {
   commentId: number;
 };
 
+/** A Discussion Question on a course → the course's Instructor. */
+export type DiscussionQuestionData = {
+  askerName: string;
+  lessonTitle: string;
+  courseTitle: string;
+  snippet: string;
+  /** The lesson URL with the question's anchor. */
+  link: string;
+  commentId: number;
+};
+
 /** Every Notification Cadence sends, and the data its trigger carries. */
 export type NotificationCatalogue = {
   DiscussionReply: DiscussionReplyData;
+  DiscussionQuestion: DiscussionQuestionData;
 };
 
 export type NotificationName = keyof NotificationCatalogue;
