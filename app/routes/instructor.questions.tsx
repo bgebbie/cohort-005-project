@@ -163,16 +163,23 @@ export async function action({ request }: Route.ActionArgs) {
   // instructor, or an admin.
   const access = await requireStaff(request, course.courseId);
 
-  const created = createComment(
-    db,
-    access.userId!,
-    question.lessonId,
-    question.id,
-    parsed.data.body,
-    new Date()
-  );
-  if (!created.ok) {
-    return { ok: false, error: created.error };
+  try {
+    const created = createComment(
+      db,
+      access.userId!,
+      question.lessonId,
+      question.id,
+      parsed.data.body,
+      new Date()
+    );
+    if (!created.ok) {
+      return { ok: false, error: created.error };
+    }
+  } catch (error) {
+    if (error instanceof Error) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
   }
 
   return { ok: true };

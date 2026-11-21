@@ -807,62 +807,71 @@ export async function action({ params, request }: Route.ActionArgs) {
   ) {
     const access = await requireContentAccess(request, course.id);
 
-    if (intent === "create-comment") {
-      const parsed = parseFormData(formData, createCommentSchema);
-      if (!parsed.success) {
-        return { ok: false, error: "Enter a comment before posting." };
+    try {
+      if (intent === "create-comment") {
+        const parsed = parseFormData(formData, createCommentSchema);
+        if (!parsed.success) {
+          return { ok: false, error: "Enter a comment before posting." };
+        }
+        const created = createComment(
+          db,
+          currentUserId,
+          lessonId,
+          parsed.data.parentId ?? null,
+          parsed.data.body,
+          new Date()
+        );
+        if (!created.ok) return { ok: false, error: created.error };
+        return { ok: true };
       }
-      const created = createComment(
-        db,
-        currentUserId,
-        lessonId,
-        parsed.data.parentId ?? null,
-        parsed.data.body,
-        new Date()
-      );
-      if (!created.ok) return { ok: false, error: created.error };
-      return { ok: true };
-    }
 
-    if (intent === "edit-comment") {
-      const parsed = parseFormData(formData, editCommentSchema);
-      if (!parsed.success) {
-        return { ok: false, error: "Enter a comment before saving." };
+      if (intent === "edit-comment") {
+        const parsed = parseFormData(formData, editCommentSchema);
+        if (!parsed.success) {
+          return { ok: false, error: "Enter a comment before saving." };
+        }
+        // Scope the id to this lesson so a comment elsewhere can't be reached
+        // by posting its id to this route.
+        const existing = getComment(db, parsed.data.commentId);
+        if (!existing || existing.lessonId !== lessonId) {
+          throw data("Comment not found", { status: 404 });
+        }
+        const edited = editComment(
+          db,
+          parsed.data.commentId,
+          currentUserId,
+          parsed.data.body,
+          new Date()
+        );
+        if (!edited.ok) return { ok: false, error: edited.error };
+        return { ok: true };
       }
-      // Scope the id to this lesson so a comment elsewhere can't be reached
-      // by posting its id to this route.
+
+      const parsed = parseFormData(formData, deleteCommentSchema);
+      if (!parsed.success) {
+        return { ok: false, error: "Could not delete that comment." };
+      }
       const existing = getComment(db, parsed.data.commentId);
       if (!existing || existing.lessonId !== lessonId) {
         throw data("Comment not found", { status: 404 });
       }
-      const edited = editComment(
+      const deleted = deleteComment(
         db,
         parsed.data.commentId,
         currentUserId,
-        parsed.data.body,
+        access.isStaff,
         new Date()
       );
-      if (!edited.ok) return { ok: false, error: edited.error };
+      if (!deleted.ok) return { ok: false, error: deleted.error };
       return { ok: true };
+    } catch (error) {
+      // Service validation failures come back as results; anything else thrown
+      // as an Error is shown to the user, and a Response (404 above) bubbles.
+      if (error instanceof Error) {
+        return { ok: false, error: error.message };
+      }
+      throw error;
     }
-
-    const parsed = parseFormData(formData, deleteCommentSchema);
-    if (!parsed.success) {
-      return { ok: false, error: "Could not delete that comment." };
-    }
-    const existing = getComment(db, parsed.data.commentId);
-    if (!existing || existing.lessonId !== lessonId) {
-      throw data("Comment not found", { status: 404 });
-    }
-    const deleted = deleteComment(
-      db,
-      parsed.data.commentId,
-      currentUserId,
-      access.isStaff,
-      new Date()
-    );
-    if (!deleted.ok) return { ok: false, error: deleted.error };
-    return { ok: true };
   }
 
   if (intent === "mark-complete") {
