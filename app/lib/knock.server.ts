@@ -71,5 +71,18 @@ export function knockNotificationPort(secretApiKey: string): NotificationPort {
         { idempotencyKey: trigger.idempotencyKey }
       );
     },
+    async archiveCommentNotifications(commentId) {
+      // Every recipient's messages whose trigger data has this commentId (a
+      // number, as the Discussion triggers send it).
+      const messageIds: string[] = [];
+      for await (const message of knock.messages.list({
+        trigger_data: JSON.stringify({ commentId }),
+      })) {
+        messageIds.push(message.id);
+      }
+      // Knock answers an empty message_ids with a 422.
+      if (messageIds.length === 0) return;
+      await knock.messages.batch.archive({ message_ids: messageIds });
+    },
   };
 }

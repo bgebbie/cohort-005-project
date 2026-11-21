@@ -344,6 +344,7 @@ describe("the Seat claim Notification", () => {
     const [seat] = buySeats(teamAdmin.id, 1, null);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const failing: NotificationPort = {
+      ...fakeNotificationPort(),
       trigger: async () => {
         throw new Error("Knock is down");
       },

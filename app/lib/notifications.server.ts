@@ -8,7 +8,7 @@ import { knockNotificationPort } from "~/lib/knock.server";
 //
 // Adapters:
 // - knockNotificationPort (knock.server.ts): the only code that touches Knock.
-// - fakeNotificationPort: records every trigger, for vitest.
+// - fakeNotificationPort: records every trigger and archive, for vitest.
 // - noopNotificationPort: logs instead, when KNOCK_SECRET_API_KEY is absent.
 //
 // Adding a Notification:
@@ -94,6 +94,11 @@ export type NotificationTrigger = {
 
 export interface NotificationPort {
   trigger(trigger: NotificationTrigger): Promise<void>;
+  /**
+   * Archives the Notifications a comment caused, found by the `commentId` in
+   * their trigger data, so they leave the recipient's Notification Feed.
+   */
+  archiveCommentNotifications(commentId: number): Promise<void>;
 }
 
 /**
@@ -114,16 +119,41 @@ export async function notify(
   }
 }
 
+/**
+ * Archives the Notifications a deleted comment caused, best-effort: a failure
+ * is logged and never thrown, so it can't fail the delete.
+ */
+export async function archiveCommentNotifications(
+  port: NotificationPort,
+  commentId: number
+): Promise<void> {
+  try {
+    await port.archiveCommentNotifications(commentId);
+  } catch (error) {
+    console.error(
+      `[notifications] archiving comment ${commentId}'s Notifications failed:`,
+      error
+    );
+  }
+}
+
 export type FakeNotificationPort = NotificationPort & {
   triggers: NotificationTrigger[];
+  /** The comment ids whose Notifications were archived. */
+  archives: number[];
 };
 
 export function fakeNotificationPort(): FakeNotificationPort {
   const triggers: NotificationTrigger[] = [];
+  const archives: number[] = [];
   return {
     triggers,
+    archives,
     async trigger(trigger) {
       triggers.push(trigger);
+    },
+    async archiveCommentNotifications(commentId) {
+      archives.push(commentId);
     },
   };
 }
@@ -135,6 +165,11 @@ export function noopNotificationPort(): NotificationPort {
         `[notifications] no KNOCK_SECRET_API_KEY; would send ${trigger.notification} to`,
         trigger.recipients.map((r) => r.id),
         trigger.data
+      );
+    },
+    async archiveCommentNotifications(commentId) {
+      console.info(
+        `[notifications] no KNOCK_SECRET_API_KEY; would archive comment ${commentId}'s Notifications`
       );
     },
   };
