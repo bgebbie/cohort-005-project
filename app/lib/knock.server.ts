@@ -37,6 +37,22 @@ export const KNOCK_WORKFLOWS: Record<
     workflow: "discussion-reply",
     category: KNOCK_CATEGORIES.DiscussionReplies,
   },
+  RefundRequestConfirmation: {
+    workflow: "refund-request-confirmation",
+    category: KNOCK_CATEGORIES.RefundRequestUpdates,
+  },
+  OpenRefundRequest: {
+    workflow: "open-refund-request",
+    category: KNOCK_CATEGORIES.OpenRefundRequests,
+  },
+  RefundRequestApproved: {
+    workflow: "refund-request-approved",
+    category: KNOCK_CATEGORIES.RefundRequestUpdates,
+  },
+  RefundRequestDeclined: {
+    workflow: "refund-request-declined",
+    category: KNOCK_CATEGORIES.RefundRequestUpdates,
+  },
   DiscussionQuestion: {
     workflow: "discussion-question",
     category: KNOCK_CATEGORIES.DiscussionQuestions,

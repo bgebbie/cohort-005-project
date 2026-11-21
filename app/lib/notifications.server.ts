@@ -50,6 +50,54 @@ export type DiscussionReplyData = {
   commentId: number;
 };
 
+/**
+ * Cadence telling a buyer their Refund Request was raised and is under review.
+ * It has no actor and nowhere to go, so `link` is null.
+ */
+export type RefundRequestConfirmationData = {
+  refundRequestId: number;
+  courseTitle: string;
+  /** The amount paid, formatted, e.g. "$79.00". */
+  amount: string;
+  link: null;
+};
+
+/** A new Open Refund Request, for every Platform Admin to decide. */
+export type OpenRefundRequestData = {
+  refundRequestId: number;
+  buyerName: string;
+  courseTitle: string;
+  amount: string;
+  reason: string;
+  /** The Refund Request review page. */
+  link: string;
+};
+
+/** A Platform Admin approved the buyer's Refund Request. */
+export type RefundRequestApprovedData = {
+  refundRequestId: number;
+  courseTitle: string;
+  amount: string;
+  purchaseKind: "individual_purchase" | "team_licence";
+  decisionNote: string | null;
+  /** Settings for an Individual Purchase, the team page for a Team Licence. */
+  link: string;
+};
+
+/**
+ * A Platform Admin declined the buyer's Refund Request. The note is required,
+ * and the buyer may raise a new Refund Request.
+ */
+export type RefundRequestDeclinedData = {
+  refundRequestId: number;
+  courseTitle: string;
+  amount: string;
+  purchaseKind: "individual_purchase" | "team_licence";
+  decisionNote: string;
+  /** Settings for an Individual Purchase, the team page for a Team Licence. */
+  link: string;
+};
+
 /** A Discussion Question on a course → the course's Instructor. */
 export type DiscussionQuestionData = {
   askerName: string;
@@ -75,6 +123,10 @@ export type SeatClaimedData = {
 /** Every Notification Cadence sends, and the data its trigger carries. */
 export type NotificationCatalogue = {
   DiscussionReply: DiscussionReplyData;
+  RefundRequestConfirmation: RefundRequestConfirmationData;
+  OpenRefundRequest: OpenRefundRequestData;
+  RefundRequestApproved: RefundRequestApprovedData;
+  RefundRequestDeclined: RefundRequestDeclinedData;
   DiscussionQuestion: DiscussionQuestionData;
   SeatClaimed: SeatClaimedData;
 };
