@@ -1,6 +1,4 @@
 import { eq } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import * as schema from "~/db/schema";
 import { coupons, courses, purchases, UserRole, users } from "~/db/schema";
 import {
   getNotificationPreferences,
@@ -8,6 +6,7 @@ import {
   type NotificationUserPort,
   type PreferenceCategory,
 } from "~/lib/notifications.server";
+import type { Db } from "~/lib/refunds.server";
 
 // ─── Notification Preferences on Settings ───
 // Which switches a person sees on the Notifications card, and saving one.
@@ -17,8 +16,6 @@ import {
 //
 // Takes the database first and the NotificationUserPort second (project
 // convention).
-
-export type Db = BetterSQLite3Database<typeof schema>;
 
 export type NotificationSwitch = {
   category: PreferenceCategory;

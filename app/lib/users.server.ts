@@ -1,7 +1,6 @@
 import { eq } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import * as schema from "~/db/schema";
 import { UserRole, users } from "~/db/schema";
+import type { Db } from "~/lib/refunds.server";
 import {
   syncUser,
   type NotificationUser,
@@ -16,17 +15,37 @@ import {
 // Every function takes the database first and the NotificationUserPort second.
 // Uses positional parameters (project convention).
 
-export type Db = BetterSQLite3Database<typeof schema>;
-
 type User = typeof users.$inferSelect;
 
-function notificationUser(user: User): NotificationUser {
-  return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    avatarUrl: user.avatarUrl,
-  };
+/**
+ * A user as a Notification carries them (recipient or actor), or undefined
+ * when there's no such user. The one place Cadence builds a NotificationUser.
+ */
+export function getNotificationUser(
+  db: Db,
+  userId: number
+): NotificationUser | undefined {
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      avatarUrl: users.avatarUrl,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+}
+
+/** Syncs a user by id, best-effort. False when there's no such user. */
+async function syncUserById(
+  db: Db,
+  notifications: NotificationUserPort,
+  userId: number
+): Promise<boolean> {
+  const user = getNotificationUser(db, userId);
+  if (!user) return false;
+  return syncUser(notifications, user);
 }
 
 export type SignUpResult = { user: User; created: boolean };
@@ -49,7 +68,7 @@ export async function signUp(
     .values({ name, email, role: UserRole.Student, avatarUrl: null })
     .returning()
     .get();
-  await syncUser(notifications, notificationUser(user));
+  await syncUserById(db, notifications, user.id);
   return { user, created: true };
 }
 
@@ -75,7 +94,7 @@ export async function updateProfile(
     .returning()
     .get();
   if (user.name !== before.name) {
-    await syncUser(notifications, notificationUser(user));
+    await syncUserById(db, notifications, user.id);
   }
   return user;
 }
@@ -98,7 +117,7 @@ export async function editUser(
     .returning()
     .get();
   if (!user) return undefined;
-  await syncUser(notifications, notificationUser(user));
+  await syncUserById(db, notifications, user.id);
   return user;
 }
 
@@ -113,8 +132,12 @@ export async function syncAllUsers(
 ): Promise<{ synced: number; failed: number }> {
   let synced = 0;
   let failed = 0;
-  for (const user of db.select().from(users).orderBy(users.id).all()) {
-    if (await syncUser(notifications, notificationUser(user))) synced++;
+  for (const { id } of db
+    .select({ id: users.id })
+    .from(users)
+    .orderBy(users.id)
+    .all()) {
+    if (await syncUserById(db, notifications, id)) synced++;
     else failed++;
   }
   return { synced, failed };

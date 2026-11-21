@@ -27,8 +27,8 @@ import {
 import {
   notify,
   type NotificationPort,
-  type NotificationUser,
 } from "~/lib/notifications.server";
+import { getNotificationUser } from "~/lib/users.server";
 
 // ─── Refunds ───
 // Everything about Refund Requests: whether a Purchase may be refunded, raising
@@ -379,13 +379,14 @@ export async function raiseRefundRequest(
 
   const { purchase } = check;
   const buyer = db.select().from(users).where(eq(users.id, buyerId)).get();
+  const buyerToNotify = getNotificationUser(db, buyerId);
   const course = db
     .select()
     .from(courses)
     .where(eq(courses.id, purchase.courseId))
     .get();
 
-  if (!buyer || !course) {
+  if (!buyer || !buyerToNotify || !course) {
     return { ok: false, status: 404, error: "Purchase not found." };
   }
 
@@ -404,7 +405,7 @@ export async function raiseRefundRequest(
 
   await notify(notifications, {
     notification: "RefundRequestConfirmation",
-    recipients: [toNotificationUser(buyer)],
+    recipients: [buyerToNotify],
     actor: null,
     data: {
       refundRequestId: refundRequest.id,
@@ -418,18 +419,19 @@ export async function raiseRefundRequest(
   // Whoever is a Platform Admin right now, since role isn't synced to Knock.
   // Never about the recipient's own action, so a buyer who is one is left out.
   const platformAdmins = db
-    .select()
+    .select({ id: users.id })
     .from(users)
     .where(eq(users.role, UserRole.Admin))
     .orderBy(asc(users.id))
     .all()
-    .filter((admin) => admin.id !== buyer.id);
+    .filter((admin) => admin.id !== buyer.id)
+    .flatMap((admin) => getNotificationUser(db, admin.id) ?? []);
 
   if (platformAdmins.length > 0) {
     await notify(notifications, {
       notification: "OpenRefundRequest",
-      recipients: platformAdmins.map(toNotificationUser),
-      actor: toNotificationUser(buyer),
+      recipients: platformAdmins,
+      actor: buyerToNotify,
       data: {
         refundRequestId: refundRequest.id,
         buyerName: buyer.name,
@@ -460,17 +462,6 @@ export async function raiseRefundRequest(
         "— The Cadence team",
       ].join("\n"),
     },
-  };
-}
-
-function toNotificationUser(
-  user: typeof users.$inferSelect
-): NotificationUser {
-  return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    avatarUrl: user.avatarUrl,
   };
 }
 
@@ -838,27 +829,23 @@ async function notifyDecision(
   decision: Decision
 ) {
   const decided = db
-    .select({ purchase: purchases, courseTitle: courses.title, buyer: users })
+    .select({ purchase: purchases, courseTitle: courses.title })
     .from(refunds)
     .innerJoin(purchases, eq(refunds.purchaseId, purchases.id))
     .innerJoin(courses, eq(purchases.courseId, courses.id))
-    .innerJoin(users, eq(purchases.userId, users.id))
     .where(eq(refunds.id, refundRequestId))
     .get();
-  const decider = db
-    .select()
-    .from(users)
-    .where(eq(users.id, platformAdminId))
-    .get();
-  if (!decided || !decider) return;
+  const buyer = decided && getNotificationUser(db, decided.purchase.userId);
+  const decider = getNotificationUser(db, platformAdminId);
+  if (!decided || !buyer || !decider) return;
 
-  const { purchase, courseTitle, buyer } = decided;
+  const { purchase, courseTitle } = decided;
   // Never about the recipient's own action.
   if (decider.id === buyer.id) return;
 
   const purchaseKind = kindOf(getSeats(db, purchase.id));
-  const recipients = [toNotificationUser(buyer)];
-  const actor = toNotificationUser(decider);
+  const recipients = [buyer];
+  const actor = decider;
   const about = {
     refundRequestId,
     courseTitle,

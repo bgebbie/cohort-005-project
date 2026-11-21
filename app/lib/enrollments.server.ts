@@ -1,11 +1,8 @@
 import { and, count, eq, isNull } from "drizzle-orm";
-import { coupons, courses, purchases, enrollments, users } from "~/db/schema";
-import {
-  notify,
-  type NotificationPort,
-  type NotificationUser,
-} from "~/lib/notifications.server";
+import { coupons, courses, purchases, enrollments } from "~/db/schema";
+import { notify, type NotificationPort } from "~/lib/notifications.server";
 import { getSeatAvailability, type Db } from "~/lib/refunds.server";
+import { getNotificationUser } from "~/lib/users.server";
 
 // ─── Enrollments ───
 // Enrollment from an Individual Purchase, and Seat claims on a Team Licence.
@@ -134,7 +131,7 @@ export async function claimSeat(
   return { ok: true, enrollment: claimed.enrollment };
 }
 
-type SeatClaimed =
+type SeatClaimTransactionResult =
   | { ok: true; enrollment: Enrollment; seat: Seat }
   | { ok: false; error: string };
 
@@ -142,8 +139,8 @@ function claimSeatInTransaction(
   db: Db,
   input: SeatClaimInput,
   now: Date
-): SeatClaimed {
-  return db.transaction((tx): SeatClaimed => {
+): SeatClaimTransactionResult {
+  return db.transaction((tx): SeatClaimTransactionResult => {
     const seat = tx
       .select()
       .from(coupons)
@@ -287,20 +284,4 @@ function countSeatsLeft(db: Db, purchaseId: number): number {
     )
     .get();
   return row?.seatsLeft ?? 0;
-}
-
-function getNotificationUser(
-  db: Db,
-  userId: number
-): NotificationUser | undefined {
-  return db
-    .select({
-      id: users.id,
-      name: users.name,
-      email: users.email,
-      avatarUrl: users.avatarUrl,
-    })
-    .from(users)
-    .where(eq(users.id, userId))
-    .get();
 }
