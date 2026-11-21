@@ -104,11 +104,11 @@ describe("enrolling after an Individual Purchase", () => {
     expect(enrollmentsOf(student.id)).toHaveLength(1);
   });
 
-  it("lets a Lapsed Student enroll again", () => {
+  it("lets a Lapsed Student enroll again", async () => {
     const student = addStudent("Ada");
     const first = buy(student.id);
     if (!first.ok) throw new Error("first purchase refused");
-    lapse(first.purchase.id, student.id);
+    await lapse(first.purchase.id, student.id);
     expect(enrollmentsOf(student.id)).toHaveLength(0);
 
     const result = buy(student.id);
@@ -162,7 +162,7 @@ describe("claiming a Seat", () => {
     const teamAdmin = addStudent("Tess");
     const student = addStudent("Ada");
     const [seat] = buySeats(teamAdmin.id, 2, null);
-    raiseOn(seat.purchaseId, teamAdmin.id);
+    await raiseOn(seat.purchaseId, teamAdmin.id);
 
     const result = await claim(seat.code, student.id, null);
 
@@ -180,8 +180,8 @@ describe("claiming a Seat", () => {
     const teamAdmin = addStudent("Tess");
     const student = addStudent("Ada");
     const [seat] = buySeats(teamAdmin.id, 2, null);
-    const refundRequestId = raiseOn(seat.purchaseId, teamAdmin.id);
-    approve(refundRequestId);
+    const refundRequestId = await raiseOn(seat.purchaseId, teamAdmin.id);
+    await approve(refundRequestId);
 
     const result = await claim(seat.code, student.id, null);
 
@@ -261,7 +261,7 @@ describe("claiming a Seat", () => {
     const student = addStudent("Ada");
     const bought = buy(student.id);
     if (!bought.ok) throw new Error("purchase refused");
-    lapse(bought.purchase.id, student.id);
+    await lapse(bought.purchase.id, student.id);
     const [seat] = buySeats(teamAdmin.id, 1, null);
 
     const result = await claim(seat.code, student.id, null);
@@ -344,6 +344,7 @@ describe("the Seat claim Notification", () => {
     const [seat] = buySeats(teamAdmin.id, 1, null);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const failing: NotificationPort = {
+      ...fakeNotificationPort(),
       trigger: async () => {
         throw new Error("Knock is down");
       },
@@ -359,9 +360,10 @@ describe("the Seat claim Notification", () => {
   });
 });
 
-function approve(refundRequestId: number) {
-  const approved = approveRefundRequest(
+async function approve(refundRequestId: number) {
+  const approved = await approveRefundRequest(
     db,
+    fakeNotificationPort(),
     refundRequestId,
     platformAdmin.id,
     null,
@@ -370,9 +372,10 @@ function approve(refundRequestId: number) {
   if (!approved.ok) throw new Error(approved.error);
 }
 
-function raiseOn(purchaseId: number, buyerId: number) {
-  const raised = raiseRefundRequest(
+async function raiseOn(purchaseId: number, buyerId: number) {
+  const raised = await raiseRefundRequest(
     db,
+    fakeNotificationPort(),
     purchaseId,
     buyerId,
     "It was not what I expected.",
@@ -427,17 +430,19 @@ function claim(
 }
 
 /** Approves a Refund Request on the Individual Purchase, so the buyer lapses. */
-function lapse(purchaseId: number, buyerId: number) {
-  const raised = raiseRefundRequest(
+async function lapse(purchaseId: number, buyerId: number) {
+  const raised = await raiseRefundRequest(
     db,
+    fakeNotificationPort(),
     purchaseId,
     buyerId,
     "It was not what I expected.",
     NOW
   );
   if (!raised.ok) throw new Error(raised.error);
-  const approved = approveRefundRequest(
+  const approved = await approveRefundRequest(
     db,
+    fakeNotificationPort(),
     raised.refundRequestId,
     platformAdmin.id,
     null,

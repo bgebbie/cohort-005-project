@@ -17,6 +17,8 @@ import { db } from "~/db";
 import { eq } from "drizzle-orm";
 import { formatPrice } from "~/lib/utils";
 import { listRefundRequestsForBuyer } from "~/lib/refunds.server";
+import { defaultNotificationPort } from "~/lib/notifications.server";
+import { updateProfile } from "~/lib/users.server";
 
 const settingsSchema = z.object({
   name: z.string().trim().min(1, "Name cannot be empty."),
@@ -88,12 +90,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   const { name, bio } = parsed.data;
 
-  db
-    .update(users)
-    .set({ name, email: currentUser.email, bio: bio || null })
-    .where(eq(users.id, currentUser.id))
-    .returning()
-    .get();
+  await updateProfile(db, defaultNotificationPort(), currentUser.id, name, bio);
   return { success: true };
 }
 
