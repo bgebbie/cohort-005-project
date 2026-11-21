@@ -18,28 +18,46 @@ import type {
 //
 // One instance serves one person: when the DevUI switches user, dispose this
 // one and create another, so nothing of the previous person's feed survives.
+//
+// Live updates come over one Knock real-time socket per instance (so one per
+// signed-in person and tab), joined with `listenForUpdates`. A new Notification
+// sets the badge counts from the socket and prepends the new rows, through the
+// same store the snapshot reads. Nothing polls: Knock rate-limits quick feed
+// reads with a 429.
 
 const PAGE_SIZE = 100;
 
 /**
- * Connects to `config`'s person's feed and loads the first page.
- * `latestUserToken` returns the newest token the server has signed for them;
- * Knock asks for it as the current one nears expiry.
+ * Ask for a new token this long before the current one expires. Generous,
+ * because browsers throttle timers in background tabs by up to a minute.
+ */
+const REFRESH_TOKEN_BEFORE_EXPIRY_MS = 5 * 60 * 1000;
+
+/**
+ * Connects to `config`'s person's feed, loads the first page and listens for
+ * new Notifications.
+ *
+ * `refreshUserToken` resolves to a newer token for the same person, or
+ * undefined if there isn't one. Knock calls it shortly before the current
+ * token expires and reconnects the socket with the new token; a token that
+ * expires no later than the current one is ignored.
  */
 export function knockNotificationFeed(
   config: KnockFeedConfig,
-  latestUserToken: () => string
+  refreshUserToken: () => Promise<string | undefined>
 ): NotificationFeed {
   const knock = new Knock(config.publicApiKey);
   knock.authenticate({ id: config.knockUserId }, config.userToken, {
     // The server owns user sync; the browser never identifies.
     identificationStrategy: "skip",
-    onUserTokenExpiring: async () => latestUserToken(),
+    onUserTokenExpiring: () => refreshUserToken(),
+    timeBeforeExpirationInMs: REFRESH_TOKEN_BEFORE_EXPIRY_MS,
   });
   const feed = knock.feeds.initialize(config.feedChannelId, {
     page_size: PAGE_SIZE,
     archived: "exclude",
   });
+  feed.listenForUpdates();
 
   let disposed = false;
   let loaded = false;
