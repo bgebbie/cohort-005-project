@@ -1,7 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import * as schema from "~/db/schema";
-import { comments, courses, lessons, modules, users } from "~/db/schema";
+import { comments, courses, lessons, modules } from "~/db/schema";
 import {
   commentAnchor,
   MAX_COMMENT_LENGTH,
@@ -10,9 +8,11 @@ import {
 import {
   archiveCommentNotifications,
   notify,
+  recipientsOtherThan,
   type NotificationPort,
-  type NotificationUser,
 } from "~/lib/notifications.server";
+import type { Db } from "~/lib/refunds.server";
+import { getNotificationUser } from "~/lib/users.server";
 
 // ─── Comments ───
 // Discussion Questions and Discussion Replies on a lesson: posting, editing and
@@ -21,8 +21,6 @@ import {
 // Every function takes the database first and `now` last, so tests can hand in
 // an in-memory one; a function that sends Notifications takes the
 // NotificationPort second. Uses positional parameters (project convention).
-
-export type Db = BetterSQLite3Database<typeof schema>;
 
 type Comment = typeof comments.$inferSelect;
 
@@ -119,11 +117,14 @@ export async function createComment(
     .get();
 
   const place = getPlace(db, lessonId);
+  // No place means a lesson outside any course, which has nobody to notify.
+  if (!place) return { ok: true, comment };
+
   if (!parent) {
     if (isDiscussionQuestion(comment, place)) {
       await notifyDiscussionQuestion(db, notifications, comment, place);
     }
-  } else if (replyNotifies(comment, parent, place)) {
+  } else if (isDiscussionQuestion(parent, place)) {
     await notifyDiscussionReply(
       db,
       notifications,
@@ -142,19 +143,16 @@ function isDiscussionQuestion(comment: Comment, place: Place): boolean {
 }
 
 /**
- * A reply notifies when it's a Discussion Reply (under a Discussion Question)
- * from someone other than the question's author: a Notification is never
- * about the recipient's own action.
+ * Whether posting this comment sent a Notification. A reply is a Discussion
+ * Reply only under a Discussion Question, and `notify` drops the actor, so a
+ * reply to your own question sent nothing.
  */
-function replyNotifies(reply: Comment, parent: Comment, place: Place): boolean {
-  return isDiscussionQuestion(parent, place) && parent.userId !== reply.userId;
-}
-
-/** Whether posting this comment sent a Notification. */
 function causedNotification(db: Db, comment: Comment, place: Place): boolean {
   if (comment.parentId === null) return isDiscussionQuestion(comment, place);
-  const parent = getComment(db, comment.parentId)!;
-  return replyNotifies(comment, parent, place);
+  const parent = getComment(db, comment.parentId);
+  if (!parent || !isDiscussionQuestion(parent, place)) return false;
+  const recipients = [{ id: parent.userId }];
+  return recipientsOtherThan(recipients, { id: comment.userId }).length > 0;
 }
 
 /** Where a comment sits: its lesson and course, and the course's Instructor. */
@@ -165,7 +163,7 @@ type Place = {
   instructorId: number;
 };
 
-function getPlace(db: Db, lessonId: number): Place {
+function getPlace(db: Db, lessonId: number): Place | undefined {
   return db
     .select({
       lessonTitle: lessons.title,
@@ -177,7 +175,7 @@ function getPlace(db: Db, lessonId: number): Place {
     .innerJoin(modules, eq(modules.id, lessons.moduleId))
     .innerJoin(courses, eq(courses.id, modules.courseId))
     .where(eq(lessons.id, lessonId))
-    .get()!;
+    .get();
 }
 
 function commentLink(place: Place, comment: Comment): string {
@@ -192,10 +190,12 @@ async function notifyDiscussionQuestion(
   place: Place
 ) {
   const asker = getNotificationUser(db, question.userId);
+  const instructor = getNotificationUser(db, place.instructorId);
+  if (!asker || !instructor) return;
 
   await notify(notifications, {
     notification: "DiscussionQuestion",
-    recipients: [getNotificationUser(db, place.instructorId)],
+    recipients: [instructor],
     actor: asker,
     data: {
       askerName: asker.name,
@@ -218,10 +218,12 @@ async function notifyDiscussionReply(
   place: Place
 ) {
   const replier = getNotificationUser(db, reply.userId);
+  const questionAuthor = getNotificationUser(db, questionAuthorId);
+  if (!replier || !questionAuthor) return;
 
   await notify(notifications, {
     notification: "DiscussionReply",
-    recipients: [getNotificationUser(db, questionAuthorId)],
+    recipients: [questionAuthor],
     actor: replier,
     data: {
       replierName: replier.name,
@@ -243,19 +245,6 @@ function snippet(body: string): string {
   return oneLine.length <= SNIPPET_LENGTH
     ? oneLine
     : `${oneLine.slice(0, SNIPPET_LENGTH - 1).trimEnd()}…`;
-}
-
-function getNotificationUser(db: Db, userId: number): NotificationUser {
-  return db
-    .select({
-      id: users.id,
-      name: users.name,
-      email: users.email,
-      avatarUrl: users.avatarUrl,
-    })
-    .from(users)
-    .where(eq(users.id, userId))
-    .get()!;
 }
 
 /** Edits the body of a live comment. Only its author may; staff cannot edit anyone else's. */
@@ -333,7 +322,8 @@ export async function deleteComment(
     .returning()
     .get();
 
-  if (causedNotification(db, comment, getPlace(db, comment.lessonId))) {
+  const place = getPlace(db, comment.lessonId);
+  if (place && causedNotification(db, comment, place)) {
     await archiveCommentNotifications(notifications, comment.id);
   }
 

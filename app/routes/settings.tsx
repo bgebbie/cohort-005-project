@@ -17,7 +17,10 @@ import { db } from "~/db";
 import { eq } from "drizzle-orm";
 import { formatPrice } from "~/lib/utils";
 import { listRefundRequestsForBuyer } from "~/lib/refunds.server";
-import { defaultNotificationPort } from "~/lib/notifications.server";
+import {
+  defaultNotificationPort,
+  PREFERENCE_CATEGORIES,
+} from "~/lib/notifications.server";
 import { updateProfile } from "~/lib/users.server";
 import {
   listNotificationSwitches,
@@ -40,14 +43,7 @@ const settingsSchema = z.discriminatedUnion("intent", [
   }),
   z.object({
     intent: z.literal(SET_NOTIFICATION_PREFERENCE),
-    category: z.enum([
-      "RefundRequestUpdates",
-      "OpenRefundRequests",
-      "SeatClaims",
-      "Enrollments",
-      "DiscussionQuestions",
-      "DiscussionReplies",
-    ]),
+    category: z.enum(PREFERENCE_CATEGORIES),
     enabled: z.enum(["true", "false"]).transform((value) => value === "true"),
   }),
 ]);

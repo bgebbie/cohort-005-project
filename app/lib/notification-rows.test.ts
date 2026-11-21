@@ -38,8 +38,8 @@ const discussionReply = feedNotification({
 describe("a Discussion Reply row", () => {
   it("says who replied and quotes the reply", () => {
     expect(notificationRowText(discussionReply)).toEqual({
-      title: "Ada Lovelace replied to your question",
-      snippet: "“You can capture the loop variable with let.”",
+      title: "Ada Lovelace replied to your Discussion Question",
+      snippet: "Closures: “You can capture the loop variable with let.”",
     });
   });
 
@@ -49,7 +49,7 @@ describe("a Discussion Reply row", () => {
       actor: { name: "Ada King", avatarUrl: null },
     };
     expect(notificationRowText(renamed).title).toBe(
-      "Ada Lovelace replied to your question"
+      "Ada Lovelace replied to your Discussion Question"
     );
   });
 
@@ -59,6 +59,16 @@ describe("a Discussion Reply row", () => {
       data: { ...discussionReply.data, snippet: null },
     };
     expect(notificationRowText(noSnippet).snippet).toBe("Closures");
+  });
+
+  it("still quotes the reply when there is no lesson", () => {
+    const noLesson = {
+      ...discussionReply,
+      data: { ...discussionReply.data, lessonTitle: null },
+    };
+    expect(notificationRowText(noLesson).snippet).toBe(
+      "“You can capture the loop variable with let.”"
+    );
   });
 
   it("goes to the reply on its lesson", () => {
@@ -84,8 +94,8 @@ describe("a Discussion Question row", () => {
 
   it("says who asked and quotes the question", () => {
     expect(notificationRowText(question)).toEqual({
-      title: "Grace Hopper asked a question",
-      snippet: "“Why does the loop print 3 three times?”",
+      title: "Grace Hopper asked a Discussion Question",
+      snippet: "Closures: “Why does the loop print 3 three times?”",
     });
   });
 

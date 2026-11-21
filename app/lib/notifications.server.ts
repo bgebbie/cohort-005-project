@@ -30,13 +30,16 @@ export type NotificationUser = {
 };
 
 /** The six groups a person can turn off as Notification Preferences. */
-export type PreferenceCategory =
-  | "RefundRequestUpdates"
-  | "OpenRefundRequests"
-  | "SeatClaims"
-  | "Enrollments"
-  | "DiscussionQuestions"
-  | "DiscussionReplies";
+export const PREFERENCE_CATEGORIES = [
+  "RefundRequestUpdates",
+  "OpenRefundRequests",
+  "SeatClaims",
+  "Enrollments",
+  "DiscussionQuestions",
+  "DiscussionReplies",
+] as const;
+
+export type PreferenceCategory = (typeof PREFERENCE_CATEGORIES)[number];
 
 // Trigger data is flat scalars only, so Knock can filter messages by it (used
 // to archive the Notifications a deleted comment caused).
@@ -167,15 +170,32 @@ export interface NotificationPort {
 }
 
 /**
+ * A Notification is never about the recipient's own action: the recipients
+ * left once the actor is taken out. A null actor (Cadence itself) leaves them
+ * all.
+ */
+export function recipientsOtherThan<R extends { id: number }>(
+  recipients: R[],
+  actor: { id: number } | null
+): R[] {
+  return actor === null
+    ? recipients
+    : recipients.filter((recipient) => recipient.id !== actor.id);
+}
+
+/**
  * Sends a Notification best-effort: a failure is logged and never thrown, so
- * it can't fail the domain action that caused it.
+ * it can't fail the domain action that caused it. The actor never gets their
+ * own Notification, and one with nobody else to tell isn't sent.
  */
 export async function notify(
   port: NotificationPort,
   trigger: NotificationTrigger
 ): Promise<void> {
+  const recipients = recipientsOtherThan(trigger.recipients, trigger.actor);
+  if (recipients.length === 0) return;
   try {
-    await port.trigger(trigger);
+    await port.trigger({ ...trigger, recipients });
   } catch (error) {
     console.error(
       `[notifications] ${trigger.notification} (${trigger.idempotencyKey}) failed:`,

@@ -27,17 +27,15 @@ export function notificationRowText(
     case "DiscussionReply": {
       const replier = text(data, "replierName") ?? actor?.name ?? "Someone";
       return {
-        title: `${replier} replied to your question`,
-        snippet:
-          quoted(text(data, "snippet")) ?? text(data, "lessonTitle") ?? "",
+        title: `${replier} replied to your Discussion Question`,
+        snippet: joined(text(data, "lessonTitle"), quoted(text(data, "snippet"))),
       };
     }
     case "DiscussionQuestion": {
       const asker = text(data, "askerName") ?? actor?.name ?? "Someone";
       return {
-        title: `${asker} asked a question`,
-        snippet:
-          quoted(text(data, "snippet")) ?? text(data, "lessonTitle") ?? "",
+        title: `${asker} asked a Discussion Question`,
+        snippet: joined(text(data, "lessonTitle"), quoted(text(data, "snippet"))),
       };
     }
     case "SeatClaimed": {
