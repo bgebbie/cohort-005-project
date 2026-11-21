@@ -8,6 +8,7 @@ import {
   MIN_COMMENT_LENGTH,
 } from "~/lib/comments";
 import {
+  archiveCommentNotifications,
   notify,
   type NotificationPort,
   type NotificationUser,
@@ -122,11 +123,7 @@ export async function createComment(
     if (isDiscussionQuestion(comment, place)) {
       await notifyDiscussionQuestion(db, notifications, comment, place);
     }
-  } else if (
-    isDiscussionQuestion(parent, place) &&
-    // Never about the recipient's own action.
-    parent.userId !== authorId
-  ) {
+  } else if (replyNotifies(comment, parent, place)) {
     await notifyDiscussionReply(
       db,
       notifications,
@@ -142,6 +139,22 @@ export async function createComment(
 /** A top-level comment by anyone other than the course's Instructor. */
 function isDiscussionQuestion(comment: Comment, place: Place): boolean {
   return comment.parentId === null && comment.userId !== place.instructorId;
+}
+
+/**
+ * A reply notifies when it's a Discussion Reply (under a Discussion Question)
+ * from someone other than the question's author: a Notification is never
+ * about the recipient's own action.
+ */
+function replyNotifies(reply: Comment, parent: Comment, place: Place): boolean {
+  return isDiscussionQuestion(parent, place) && parent.userId !== reply.userId;
+}
+
+/** Whether posting this comment sent a Notification. */
+function causedNotification(db: Db, comment: Comment, place: Place): boolean {
+  if (comment.parentId === null) return isDiscussionQuestion(comment, place);
+  const parent = getComment(db, comment.parentId)!;
+  return replyNotifies(comment, parent, place);
 }
 
 /** Where a comment sits: its lesson and course, and the course's Instructor. */
@@ -285,14 +298,19 @@ export function editComment(
  * Soft-deletes a comment: its row stays, with `deletedAt` set. Anyone may
  * delete their own comment; staff (the course's Instructor or a Platform
  * Admin) may delete anyone's.
+ *
+ * The Notification the comment caused is archived, so it leaves its
+ * recipient's feed. Deleting a Discussion Question leaves the Notifications
+ * for its replies alone, because those replies stay visible.
  */
-export function deleteComment(
+export async function deleteComment(
   db: Db,
+  notifications: NotificationPort,
   commentId: number,
   userId: number,
   isStaff: boolean,
   now: Date
-): CommentResult {
+): Promise<CommentResult> {
   const existing = getComment(db, commentId);
   if (!existing) {
     return { ok: false, status: 404, error: "Comment not found" };
@@ -314,6 +332,10 @@ export function deleteComment(
     .where(eq(comments.id, commentId))
     .returning()
     .get();
+
+  if (causedNotification(db, comment, getPlace(db, comment.lessonId))) {
+    await archiveCommentNotifications(notifications, comment.id);
+  }
 
   return { ok: true, comment };
 }
