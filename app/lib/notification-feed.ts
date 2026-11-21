@@ -48,6 +48,10 @@ export type NotificationFeedSnapshot = {
   unreadCount: number;
   /** True until the first page has loaded (or failed to). */
   loading: boolean;
+  /** Older Notifications exist beyond the loaded ones. */
+  hasMore: boolean;
+  /** An older page is on its way. */
+  loadingMore: boolean;
 };
 
 export interface NotificationFeed {
@@ -57,6 +61,12 @@ export interface NotificationFeed {
   subscribe(listener: () => void): () => void;
   /** Disconnects for good. The feed never changes or calls a listener again. */
   dispose(): void;
+  /** Loads the next older page, if there is one and none is on its way. */
+  loadMore(): void;
+  /** Marks every Notification seen, loaded or not. Doesn't touch read. */
+  markAllAsSeen(): void;
+  /** Marks every Notification read, loaded or not. */
+  markAllAsRead(): void;
 }
 
 /** What the browser needs to read the signed-in person's feed from Knock. */
@@ -75,6 +85,8 @@ const EMPTY_SNAPSHOT: NotificationFeedSnapshot = {
   unseenCount: 0,
   unreadCount: 0,
   loading: false,
+  hasMore: false,
+  loadingMore: false,
 };
 
 const LOADING_SNAPSHOT: NotificationFeedSnapshot = {
@@ -91,6 +103,9 @@ export function emptyNotificationFeed(
     getSnapshot: () => snapshot,
     subscribe: () => () => {},
     dispose: () => {},
+    loadMore: () => {},
+    markAllAsSeen: () => {},
+    markAllAsRead: () => {},
   };
 }
 
@@ -98,4 +113,64 @@ export function emptyNotificationFeed(
 export function unseenBadge(unseenCount: number): string | null {
   if (unseenCount <= 0) return null;
   return unseenCount > 9 ? "9+" : String(unseenCount);
+}
+
+/**
+ * A "mark all" made at `at`, covering every Notification up to `through`:
+ * the newest one loaded at the time.
+ */
+export type BulkMark = { through: string; at: string };
+
+export type BulkMarks = { seen: BulkMark | null; read: BulkMark | null };
+
+/**
+ * Applies the person's last "mark all seen" and "mark all read" over what the
+ * vendor returned. Knock applies a bulk status update asynchronously, so a
+ * page fetched straight after one (scrolling down, say) can still carry the
+ * old statuses and counts. Everything newer than a mark is always loaded (the
+ * list is newest first), so the loaded rows bound the counts.
+ */
+export function withBulkMarks(
+  snapshot: NotificationFeedSnapshot,
+  marks: BulkMarks
+): NotificationFeedSnapshot {
+  const { seen, read } = marks;
+  if (!seen && !read) return snapshot;
+
+  const notifications = snapshot.notifications.map((notification) => {
+    const seenAt =
+      notification.seenAt ?? (covers(seen, notification) ? seen.at : null);
+    const readAt =
+      notification.readAt ?? (covers(read, notification) ? read.at : null);
+    return seenAt === notification.seenAt && readAt === notification.readAt
+      ? notification
+      : { ...notification, seenAt, readAt };
+  });
+
+  return {
+    ...snapshot,
+    notifications,
+    unseenCount: seen
+      ? Math.min(
+          snapshot.unseenCount,
+          notifications.filter((n) => n.seenAt === null).length
+        )
+      : snapshot.unseenCount,
+    unreadCount: read
+      ? Math.min(
+          snapshot.unreadCount,
+          notifications.filter((n) => n.readAt === null).length
+        )
+      : snapshot.unreadCount,
+  };
+}
+
+function covers(
+  mark: BulkMark | null,
+  notification: FeedNotification
+): mark is BulkMark {
+  return (
+    mark !== null &&
+    Date.parse(notification.insertedAt) <= Date.parse(mark.through)
+  );
 }
