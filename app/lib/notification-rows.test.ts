@@ -127,6 +127,30 @@ describe("a Seat claimed row", () => {
   });
 });
 
+describe("a new Enrollment row", () => {
+  const enrolled = feedNotification({
+    notification: "NewEnrollment",
+    actor: { name: "Grace Hopper", avatarUrl: null },
+    data: {
+      studentName: "Grace Hopper",
+      courseTitle: "JavaScript Deep Dive",
+      link: "/instructor/3/students",
+      enrollmentId: 12,
+    },
+  });
+
+  it("says which Student enrolled on which course", () => {
+    expect(notificationRowText(enrolled)).toEqual({
+      title: "Grace Hopper enrolled",
+      snippet: "JavaScript Deep Dive",
+    });
+  });
+
+  it("goes to the course's Students page", () => {
+    expect(notificationLink(enrolled)).toBe("/instructor/3/students");
+  });
+});
+
 describe("a Notification this build doesn't know", () => {
   it("still gets a row", () => {
     expect(notificationRowText(feedNotification())).toEqual({
