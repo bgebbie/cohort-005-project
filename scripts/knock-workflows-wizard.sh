@@ -226,6 +226,9 @@ WORKFLOWS=()
 # Discussion Reply: a reply to someone's Discussion Question → its author.
 WORKFLOWS+=("discussion-reply|discussion-replies|**{{ data.replierName }}** replied to your question in {{ data.lessonTitle }}")
 
+# Seat claimed: a Seat on a Team Licence was claimed → the Team Licence's buyer.
+WORKFLOWS+=("seat-claimed|seat-claims|**{{ data.claimerName }}** claimed a Seat on {{ data.courseTitle }}. {{ data.seatsLeft }} left.")
+
 # ── End of workflow table ─────────────────────────────────────────────────
 
 TOTAL_STAGES=$(( ${#WORKFLOWS[@]} + 2 ))

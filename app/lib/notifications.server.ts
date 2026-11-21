@@ -49,9 +49,21 @@ export type DiscussionReplyData = {
   commentId: number;
 };
 
+/** A Seat on a Team Licence was claimed → the Team Licence's buyer. */
+export type SeatClaimedData = {
+  claimerName: string;
+  courseTitle: string;
+  /** Unclaimed Seats still available on the Team Licence after this claim. */
+  seatsLeft: number;
+  /** The team page. */
+  link: string;
+  seatId: number;
+};
+
 /** Every Notification Cadence sends, and the data its trigger carries. */
 export type NotificationCatalogue = {
   DiscussionReply: DiscussionReplyData;
+  SeatClaimed: SeatClaimedData;
 };
 
 export type NotificationName = keyof NotificationCatalogue;
