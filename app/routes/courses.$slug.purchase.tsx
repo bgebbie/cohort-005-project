@@ -39,6 +39,7 @@ import { resolveCountry } from "~/lib/country.server";
 import { calculatePppPrice, getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
 import { parseFormData, parseParams } from "~/lib/validation";
 import { enrollFromIndividualPurchase } from "~/lib/enrollments.server";
+import { defaultNotificationPort } from "~/lib/notifications.server";
 
 function getCourseBySlug(slug: string) {
   return db.select().from(courses).where(eq(courses.slug, slug)).get();
@@ -330,8 +331,9 @@ export async function action({ params, request }: Route.ActionArgs) {
     : course.price;
 
   if (parsed.data.intent === "confirm-purchase") {
-    const result = enrollFromIndividualPurchase(
+    const result = await enrollFromIndividualPurchase(
       db,
+      defaultNotificationPort(),
       {
         userId: currentUserId,
         courseId: course.id,

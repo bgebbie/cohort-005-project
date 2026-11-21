@@ -61,6 +61,10 @@ export const KNOCK_WORKFLOWS: Record<
     workflow: "seat-claimed",
     category: KNOCK_CATEGORIES.SeatClaims,
   },
+  NewEnrollment: {
+    workflow: "new-enrollment",
+    category: KNOCK_CATEGORIES.Enrollments,
+  },
 };
 
 /** A Cadence user's id in Knock. The signed user token's `sub` uses it too. */
