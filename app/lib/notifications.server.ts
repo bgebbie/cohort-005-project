@@ -122,6 +122,15 @@ export type SeatClaimedData = {
   seatId: number;
 };
 
+/** A Student's new Enrollment on a course → the course's Instructor. */
+export type NewEnrollmentData = {
+  studentName: string;
+  courseTitle: string;
+  /** The course's Students page. */
+  link: string;
+  enrollmentId: number;
+};
+
 /** Every Notification Cadence sends, and the data its trigger carries. */
 export type NotificationCatalogue = {
   DiscussionReply: DiscussionReplyData;
@@ -131,6 +140,7 @@ export type NotificationCatalogue = {
   RefundRequestDeclined: RefundRequestDeclinedData;
   DiscussionQuestion: DiscussionQuestionData;
   SeatClaimed: SeatClaimedData;
+  NewEnrollment: NewEnrollmentData;
 };
 
 export type NotificationName = keyof NotificationCatalogue;

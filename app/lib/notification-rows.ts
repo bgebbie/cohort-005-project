@@ -49,6 +49,13 @@ export function notificationRowText(
           : (course ?? ""),
       };
     }
+    case "NewEnrollment": {
+      const student = text(data, "studentName") ?? actor?.name ?? "Someone";
+      return {
+        title: `${student} enrolled`,
+        snippet: text(data, "courseTitle") ?? "",
+      };
+    }
     default:
       return {
         title: actor
