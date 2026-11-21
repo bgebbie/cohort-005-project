@@ -14,6 +14,9 @@ import {
   QuestionType,
   TeamMemberRole,
 } from "../app/db/schema";
+import { knockEnv } from "../app/lib/env.server";
+import { defaultNotificationPort } from "../app/lib/notifications.server";
+import { syncAllUsers } from "../app/lib/users.server";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2852,6 +2855,19 @@ This course is still in draft while the cluster examples are rewritten against t
   console.log(
     `  Teams: ${countRows(schema.teams)}, coupons: ${countRows(schema.coupons)} (${countRows(schema.coupons, isNotNull(schema.coupons.redeemedByUserId))} redeemed)`
   );
+
+  // ─── Sync users to Knock ───
+  // Seeded ids restart at 1, so each seeded person keeps their Knock user and
+  // any preferences they already have there. Without Knock keys this only logs.
+
+  const sync = await syncAllUsers(db, defaultNotificationPort());
+  if (knockEnv().secretApiKey) {
+    console.log(
+      `  Synced users to Knock: ${sync.synced}${sync.failed ? ` (${sync.failed} failed)` : ""}`
+    );
+  } else {
+    console.log("  Knock user sync only logged: no KNOCK_SECRET_API_KEY");
+  }
 }
 
 seed().catch(console.error);
