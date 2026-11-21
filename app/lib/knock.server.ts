@@ -1,4 +1,4 @@
-import Knock, { NotFoundError } from "@knocklabs/node";
+import Knock, { NotFoundError, signUserToken } from "@knocklabs/node";
 import type { PreferenceSet } from "@knocklabs/node/resources/recipients/preferences";
 import type {
   NotificationChannel,
@@ -201,4 +201,20 @@ export function knockNotificationPort(
       await knock.messages.batch.archive({ message_ids: messageIds });
     },
   };
+}
+
+const FEED_TOKEN_SECONDS = 60 * 60;
+
+/**
+ * Signs an RS256 user token for the browser's Notification Feed. Its `sub` is
+ * the person's Knock user id, so it can't read anyone else's feed.
+ */
+export function signFeedUserToken(
+  signingKey: string,
+  cadenceUserId: number
+): Promise<string> {
+  return signUserToken(knockUserId(cadenceUserId), {
+    signingKey,
+    expiresInSeconds: FEED_TOKEN_SECONDS,
+  });
 }
