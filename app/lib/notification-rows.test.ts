@@ -209,9 +209,9 @@ describe("a Refund Request approved row", () => {
   });
 
   it("quotes the decision note when there is one", () => {
-    expect(notificationRowText(approved("Sorry it wasn't a fit.")).snippet).toBe(
-      "$79.00 for JavaScript Deep Dive: “Sorry it wasn't a fit.”"
-    );
+    expect(
+      notificationRowText(approved("Sorry it wasn't a fit.")).snippet
+    ).toBe("$79.00 for JavaScript Deep Dive: “Sorry it wasn't a fit.”");
   });
 
   it("goes to the buyer's destination", () => {
@@ -242,6 +242,30 @@ describe("a Refund Request declined row", () => {
 
   it("goes to the buyer's destination", () => {
     expect(notificationLink(declined)).toBe("/team");
+  });
+});
+
+describe("a new Enrollment row", () => {
+  const enrolled = feedNotification({
+    notification: "NewEnrollment",
+    actor: { name: "Grace Hopper", avatarUrl: null },
+    data: {
+      studentName: "Grace Hopper",
+      courseTitle: "JavaScript Deep Dive",
+      link: "/instructor/3/students",
+      enrollmentId: 12,
+    },
+  });
+
+  it("says which Student enrolled on which course", () => {
+    expect(notificationRowText(enrolled)).toEqual({
+      title: "Grace Hopper enrolled",
+      snippet: "JavaScript Deep Dive",
+    });
+  });
+
+  it("goes to the course's Students page", () => {
+    expect(notificationLink(enrolled)).toBe("/instructor/3/students");
   });
 });
 
@@ -286,6 +310,7 @@ describe("a row's feed icon", () => {
     expect(notificationIcon("RefundRequestApproved")).toBe("Refund");
     expect(notificationIcon("RefundRequestDeclined")).toBe("Refund");
     expect(notificationIcon("SeatClaimed")).toBe("Team");
+    expect(notificationIcon("NewEnrollment")).toBe("Enrollment");
   });
 
   it("is absent for a Notification this build doesn't know", () => {

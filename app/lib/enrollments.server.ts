@@ -45,8 +45,22 @@ export type EnrollFromIndividualPurchaseResult =
  * Records an Individual Purchase and gives the buyer an Enrollment on the
  * course. Refused, with no Purchase recorded, if the buyer is already
  * enrolled. A Lapsed Student has no Enrollment, so they can enroll again.
+ *
+ * Once the Enrollment commits, the course's Instructor gets an Enrollment
+ * Notification. A refused purchase sends nothing.
  */
-export function enrollFromIndividualPurchase(
+export async function enrollFromIndividualPurchase(
+  db: Db,
+  notifications: NotificationPort,
+  input: IndividualPurchaseInput,
+  now: Date
+): Promise<EnrollFromIndividualPurchaseResult> {
+  const result = recordIndividualPurchase(db, input, now);
+  if (result.ok) await notifyEnrolled(db, notifications, result.enrollment);
+  return result;
+}
+
+function recordIndividualPurchase(
   db: Db,
   input: IndividualPurchaseInput,
   now: Date
@@ -102,7 +116,8 @@ export type ClaimSeatResult =
  * Enrollment on the course.
  *
  * Once the claim commits, the Team Licence's buyer gets a Seat claim
- * Notification. A refused claim sends nothing.
+ * Notification and the course's Instructor an Enrollment Notification. A
+ * refused claim sends nothing.
  */
 export async function claimSeat(
   db: Db,
@@ -114,6 +129,7 @@ export async function claimSeat(
   if (!claimed.ok) return claimed;
 
   await notifySeatClaimed(db, notifications, claimed.seat, input.userId);
+  await notifyEnrolled(db, notifications, claimed.enrollment);
 
   return { ok: true, enrollment: claimed.enrollment };
 }
@@ -219,6 +235,41 @@ async function notifySeatClaimed(
       seatId: seat.id,
     },
     idempotencyKey: `seat-claimed:${seat.id}`,
+  });
+}
+
+/**
+ * Sends the Enrollment Notification to the course's Instructor. It always
+ * triggers: Enrollments are off by default through each Instructor's own
+ * Notification Preferences, so Knock drops it unless they opted in.
+ */
+async function notifyEnrolled(
+  db: Db,
+  notifications: NotificationPort,
+  enrollment: Enrollment
+) {
+  const course = db
+    .select({ instructorId: courses.instructorId, title: courses.title })
+    .from(courses)
+    .where(eq(courses.id, enrollment.courseId))
+    .get();
+  const instructor = course && getNotificationUser(db, course.instructorId);
+  const student = getNotificationUser(db, enrollment.userId);
+  if (!course || !instructor || !student) return;
+  // Never about the recipient's own action.
+  if (instructor.id === student.id) return;
+
+  await notify(notifications, {
+    notification: "NewEnrollment",
+    recipients: [instructor],
+    actor: student,
+    data: {
+      studentName: student.name,
+      courseTitle: course.title,
+      link: `/instructor/${enrollment.courseId}/students`,
+      enrollmentId: enrollment.id,
+    },
+    idempotencyKey: `new-enrollment:${enrollment.id}`,
   });
 }
 

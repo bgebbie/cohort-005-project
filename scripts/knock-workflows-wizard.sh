@@ -244,6 +244,9 @@ WORKFLOWS+=("discussion-question|discussion-questions|**{{ data.askerName }}** a
 # Seat claimed: a Seat on a Team Licence was claimed → the Team Licence's buyer.
 WORKFLOWS+=("seat-claimed|seat-claims|**{{ data.claimerName }}** claimed a Seat on {{ data.courseTitle }}. {{ data.seatsLeft }} left.")
 
+# New Enrollment: a Student enrolled on a course → the course's Instructor. Enrollments start off.
+WORKFLOWS+=("new-enrollment|enrollments|**{{ data.studentName }}** enrolled in {{ data.courseTitle }}")
+
 # ── End of workflow table ─────────────────────────────────────────────────
 
 TOTAL_STAGES=$(( ${#WORKFLOWS[@]} + 2 ))

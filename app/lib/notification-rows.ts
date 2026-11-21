@@ -67,7 +67,10 @@ export function notificationRowText(
         title: amount
           ? `${buyer} requested a ${amount} refund`
           : `${buyer} requested a refund`,
-        snippet: joined(text(data, "courseTitle"), quoted(text(data, "reason"))),
+        snippet: joined(
+          text(data, "courseTitle"),
+          quoted(text(data, "reason"))
+        ),
       };
     }
     case "RefundRequestApproved":
@@ -85,10 +88,13 @@ export function notificationRowText(
         snippet: note ? `${note} You can ask again.` : "You can ask again.",
       };
     }
-    // NewEnrollment (#102) goes here once its catalogue entry lands. Its data
-    // is { studentName, courseTitle, link, enrollmentId }; the row reads
-    // "{studentName} enrolled in {courseTitle}", with no snippet, and links to
-    // the course's Students page. Its feed icon is already in FEED_ICONS.
+    case "NewEnrollment": {
+      const student = text(data, "studentName") ?? actor?.name ?? "Someone";
+      return {
+        title: `${student} enrolled`,
+        snippet: text(data, "courseTitle") ?? "",
+      };
+    }
     default:
       return {
         title: actor
@@ -106,8 +112,7 @@ export function notificationRowText(
 export type FeedIcon = "Discussion" | "Refund" | "Team" | "Enrollment";
 
 // Every Notification needs an icon (typecheck fails until it has one).
-// NewEnrollment (#102) is listed ahead of its catalogue entry landing.
-const FEED_ICONS: Record<NotificationName | "NewEnrollment", FeedIcon> = {
+const FEED_ICONS: Record<NotificationName, FeedIcon> = {
   DiscussionReply: "Discussion",
   DiscussionQuestion: "Discussion",
   RefundRequestConfirmation: "Refund",
