@@ -40,8 +40,8 @@ function watchingCommits() {
   const port = fakeNotificationPort();
   const committedWhenTriggered: boolean[] = [];
   return {
+    ...port,
     committedWhenTriggered,
-    triggers: port.triggers,
     async trigger(trigger: FakeNotificationPort["triggers"][number]) {
       committedWhenTriggered.push(!db.$client.inTransaction);
       await port.trigger(trigger);
@@ -877,6 +877,7 @@ describe("Refund Request Notifications", () => {
   it("still raises and decides Refund Requests when Notifications fail, and logs the failures", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const failing = {
+      ...fakeNotificationPort(),
       trigger: async () => {
         throw new Error("Knock is down");
       },
