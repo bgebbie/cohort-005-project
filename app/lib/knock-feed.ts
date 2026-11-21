@@ -28,8 +28,8 @@ import {
 // same store the snapshot reads. Nothing polls: Knock rate-limits quick feed
 // reads with a 429.
 
-// The spec asks for about 100, but 50 is Knock's maximum. Its pagination docs
-// say page_size is "A number between 1 and 50 that represents the number of
+// The spec asks for about 100, but Knock's docs cap page_size at 50. Its
+// pagination docs say page_size is "A number between 1 and 50 that represents the number of
 // items to return in the response. Defaults to 50."
 // (https://docs.knock.app/api-reference/overview/pagination). The feed
 // endpoint's own page (https://docs.knock.app/api-reference/users/feeds/list_items)
