@@ -35,6 +35,20 @@ let platformAdmin: typeof schema.users.$inferSelect;
 let lessonIds: number[];
 let notifications: FakeNotificationPort;
 
+/** A fake port that also records whether the database was mid-transaction. */
+function watchingCommits() {
+  const port = fakeNotificationPort();
+  const committedWhenTriggered: boolean[] = [];
+  return {
+    committedWhenTriggered,
+    triggers: port.triggers,
+    async trigger(trigger: FakeNotificationPort["triggers"][number]) {
+      committedWhenTriggered.push(!db.$client.inTransaction);
+      await port.trigger(trigger);
+    },
+  };
+}
+
 beforeEach(() => {
   db = createTestDb();
   base = seedBaseData(db);
@@ -549,6 +563,14 @@ describe("Refund Request Notifications", () => {
       },
       idempotencyKey: `refund-request-confirmation:${result.refundRequestId}`,
     });
+    expect(
+      notifications.triggers.find((t) => t.notification === "OpenRefundRequest")
+    ).toMatchObject({
+      recipients: [{ id: platformAdmin.id }],
+      actor: { id: base.user.id },
+      data: { buyerName: "Test User", amount: "$79.00", link: "/admin/refunds" },
+      idempotencyKey: `open-refund-request:${result.refundRequestId}`,
+    });
   });
 
   it("tells every Platform Admin, and nobody else, about a new Open Refund Request on a Team Licence", async () => {
@@ -605,14 +627,7 @@ describe("Refund Request Notifications", () => {
   it("tells an Individual Purchase's buyer it was approved, with the note, once the decision has committed", async () => {
     const purchase = buyForSelf(base.user.id);
     const id = await raise(purchase.id, base.user.id);
-    const committedWhenTriggered: boolean[] = [];
-    const watching = {
-      triggers: [] as FakeNotificationPort["triggers"],
-      async trigger(trigger: FakeNotificationPort["triggers"][number]) {
-        committedWhenTriggered.push(!db.$client.inTransaction);
-        this.triggers.push(trigger);
-      },
-    };
+    const watching = watchingCommits();
 
     const result = await approveRefundRequest(
       db,
@@ -642,7 +657,7 @@ describe("Refund Request Notifications", () => {
         idempotencyKey: `refund-request-approved:${id}`,
       },
     ]);
-    expect(committedWhenTriggered).toEqual([true]);
+    expect(watching.committedWhenTriggered).toEqual([true]);
   });
 
   it("tells a Team Licence's buyer it was approved, linking to the team page", async () => {
@@ -668,14 +683,14 @@ describe("Refund Request Notifications", () => {
     ]);
   });
 
-  it("tells an Individual Purchase's buyer it was declined, with the note", async () => {
+  it("tells an Individual Purchase's buyer it was declined, with the note, once the decision has committed", async () => {
     const purchase = buyForSelf(base.user.id);
     const id = await raise(purchase.id, base.user.id);
-    notifications.triggers.length = 0;
+    const watching = watchingCommits();
 
     const result = await declineRefundRequest(
       db,
-      notifications,
+      watching,
       id,
       platformAdmin.id,
       "  You finished the course.  ",
@@ -683,7 +698,8 @@ describe("Refund Request Notifications", () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(notifications.triggers).toEqual([
+    expect(watching.committedWhenTriggered).toEqual([true]);
+    expect(watching.triggers).toEqual([
       {
         notification: "RefundRequestDeclined",
         recipients: [
@@ -778,7 +794,19 @@ describe("Refund Request Notifications", () => {
       expect(notifications.triggers).toEqual([]);
     });
 
-    it("on a second decision about the same Refund Request", async () => {
+    it("on a second decision about an Individual Purchase's Refund Request", async () => {
+      const purchase = buyForSelf(base.user.id);
+      const id = await raise(purchase.id, base.user.id);
+      await approveRefundRequest(db, notifications, id, platformAdmin.id, null, NOW);
+      notifications.triggers.length = 0;
+
+      expect(
+        await declineRefundRequest(db, notifications, id, platformAdmin.id, "No.", NOW)
+      ).toMatchObject({ ok: false, status: 409 });
+      expect(notifications.triggers).toEqual([]);
+    });
+
+    it("on a second decision about a Team Licence's Refund Request", async () => {
       const priya = addLearner("Priya");
       const { purchase } = buySeats(priya.id, 2);
       const id = await raise(purchase.id, priya.id);
