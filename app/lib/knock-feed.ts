@@ -93,6 +93,19 @@ export function knockNotificationFeed(
       feed.dispose();
       knock.logout();
     },
+    markRead(notificationId) {
+      if (disposed) return;
+      // One item that exists and is unread, never an empty list: Knock's
+      // batch status update returns 422 on an empty `message_ids`. Knock
+      // updates the store (and so the row and counts) before the request.
+      const item = feed
+        .getState()
+        .items.find((candidate) => candidate.id === notificationId);
+      if (!item || item.read_at) return;
+      feed.markAsRead(item).catch((error: unknown) => {
+        console.error("[notifications] could not mark read:", error);
+      });
+    },
   };
 }
 

@@ -57,6 +57,12 @@ export interface NotificationFeed {
   subscribe(listener: () => void): () => void;
   /** Disconnects for good. The feed never changes or calls a listener again. */
   dispose(): void;
+  /**
+   * Marks one Notification read, best-effort. Does nothing if it's already
+   * read or isn't in the feed. Seen isn't read: opening the popover never
+   * marks a row read.
+   */
+  markRead(notificationId: string): void;
 }
 
 /** What the browser needs to read the signed-in person's feed from Knock. */
@@ -91,6 +97,7 @@ export function emptyNotificationFeed(
     getSnapshot: () => snapshot,
     subscribe: () => () => {},
     dispose: () => {},
+    markRead: () => {},
   };
 }
 
