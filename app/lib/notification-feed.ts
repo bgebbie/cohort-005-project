@@ -5,12 +5,17 @@ import type { NotificationName } from "~/lib/notifications.server";
 // using a token the server signed for them. The feed components only see this
 // Cadence-shaped port. Adapters:
 // - knockNotificationFeed (knock-feed.ts): the only code that imports the
-//   Knock client. Load it with `loadKnockNotificationFeed`, never statically,
-//   so it stays out of the server render.
+//   Knock client. The provider (components/notifications/
+//   notification-feed-provider.tsx) loads it with a dynamic
+//   `import("~/lib/knock-feed")` inside an effect, never statically, so it
+//   stays out of the server render and the main bundle.
 // - emptyNotificationFeed (below): a signed-in person with no Knock keys
 //   configured sees an empty feed and nothing errors.
 //
 // Row text and click targets live in notification-rows.ts.
+//
+// Adding a method: add it to NotificationFeed, to knockNotificationFeed, and
+// as a no-op to emptyNotificationFeed.
 
 /** Who caused a Notification, as the vendor last saw them. */
 export type FeedActor = { name: string; avatarUrl: string | null };

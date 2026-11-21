@@ -17,6 +17,8 @@ import { knockNotificationPort } from "~/lib/knock.server";
 //    fails until you do).
 // 3. Add a block for its workflow to scripts/knock-workflows-wizard.sh.
 // 4. Call `notify` from the service that owns the event.
+// 5. Add a `case` for its row text to notificationRowText in
+//    notification-rows.ts (otherwise the feed shows a generic row).
 
 /** A person, passed inline so Knock needs no earlier user sync. */
 export type NotificationUser = {

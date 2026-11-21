@@ -64,6 +64,69 @@ describe("a Discussion Reply row", () => {
   });
 });
 
+describe("a Discussion Question row", () => {
+  const question = feedNotification({
+    notification: "DiscussionQuestion",
+    actor: { name: "Grace Hopper", avatarUrl: null },
+    data: {
+      askerName: "Grace Hopper",
+      lessonTitle: "Closures",
+      courseTitle: "JavaScript Deep Dive",
+      snippet: "Why does the loop print 3 three times?",
+      link: "/courses/js-deep-dive/lessons/7#comment-41",
+      commentId: 41,
+    },
+  });
+
+  it("says who asked and quotes the question", () => {
+    expect(notificationRowText(question)).toEqual({
+      title: "Grace Hopper asked a question",
+      snippet: "“Why does the loop print 3 three times?”",
+    });
+  });
+
+  it("goes to the question on its lesson", () => {
+    expect(notificationLink(question)).toBe(
+      "/courses/js-deep-dive/lessons/7#comment-41"
+    );
+  });
+});
+
+describe("a Seat claimed row", () => {
+  const claimed = (seatsLeft: number) =>
+    feedNotification({
+      notification: "SeatClaimed",
+      actor: { name: "Linus Pauling", avatarUrl: null },
+      data: {
+        claimerName: "Linus Pauling",
+        courseTitle: "JavaScript Deep Dive",
+        seatsLeft,
+        link: "/team",
+        seatId: 5,
+      },
+    });
+
+  it("says who claimed a Seat and how many are left", () => {
+    expect(notificationRowText(claimed(3))).toEqual({
+      title: "Linus Pauling claimed a Seat",
+      snippet: "3 Seats left on JavaScript Deep Dive",
+    });
+  });
+
+  it("counts the last Seats in plain words", () => {
+    expect(notificationRowText(claimed(1)).snippet).toBe(
+      "1 Seat left on JavaScript Deep Dive"
+    );
+    expect(notificationRowText(claimed(0)).snippet).toBe(
+      "No Seats left on JavaScript Deep Dive"
+    );
+  });
+
+  it("goes to the team page", () => {
+    expect(notificationLink(claimed(3))).toBe("/team");
+  });
+});
+
 describe("a Notification this build doesn't know", () => {
   it("still gets a row", () => {
     expect(notificationRowText(feedNotification())).toEqual({

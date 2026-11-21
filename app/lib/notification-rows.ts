@@ -30,6 +30,25 @@ export function notificationRowText(
           quoted(text(data, "snippet")) ?? text(data, "lessonTitle") ?? "",
       };
     }
+    case "DiscussionQuestion": {
+      const asker = text(data, "askerName") ?? actor?.name ?? "Someone";
+      return {
+        title: `${asker} asked a question`,
+        snippet:
+          quoted(text(data, "snippet")) ?? text(data, "lessonTitle") ?? "",
+      };
+    }
+    case "SeatClaimed": {
+      const claimer = text(data, "claimerName") ?? actor?.name ?? "Someone";
+      const course = text(data, "courseTitle");
+      const left = seatsLeftText(data.seatsLeft);
+      return {
+        title: `${claimer} claimed a Seat`,
+        snippet: left
+          ? `${left}${course ? ` on ${course}` : ""}`
+          : (course ?? ""),
+      };
+    }
     default:
       return {
         title: actor
@@ -59,4 +78,10 @@ function text(data: FeedNotificationData, key: string): string | null {
 
 function quoted(value: string | null): string | null {
   return value === null ? null : `“${value}”`;
+}
+
+function seatsLeftText(seatsLeft: FeedNotificationData[string]): string | null {
+  if (typeof seatsLeft !== "number") return null;
+  if (seatsLeft === 0) return "No Seats left";
+  return `${seatsLeft} ${seatsLeft === 1 ? "Seat" : "Seats"} left`;
 }
