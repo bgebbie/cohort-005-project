@@ -11,6 +11,7 @@ import {
   editComment,
   getComment,
 } from "~/lib/comments.server";
+import { defaultNotificationPort } from "~/lib/notifications.server";
 import {
   CommentThread,
   type RenderedComment,
@@ -813,8 +814,9 @@ export async function action({ params, request }: Route.ActionArgs) {
         if (!parsed.success) {
           return { ok: false, error: "Enter a comment before posting." };
         }
-        const created = createComment(
+        const created = await createComment(
           db,
+          defaultNotificationPort(),
           currentUserId,
           lessonId,
           parsed.data.parentId ?? null,

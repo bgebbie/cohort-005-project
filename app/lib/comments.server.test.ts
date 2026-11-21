@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createTestDb, seedBaseData } from "~/test/setup";
+import { eq } from "drizzle-orm";
 import * as schema from "~/db/schema";
 import {
   createComment,
@@ -7,6 +8,10 @@ import {
   editComment,
   getComment,
 } from "./comments.server";
+import {
+  fakeNotificationPort,
+  type FakeNotificationPort,
+} from "./notifications.server";
 
 type TestDb = ReturnType<typeof createTestDb>;
 
@@ -16,10 +21,12 @@ let db: TestDb;
 let base: ReturnType<typeof seedBaseData>;
 let lessonId: number;
 let otherLessonId: number;
+let notifications: FakeNotificationPort;
 
 beforeEach(() => {
   db = createTestDb();
   base = seedBaseData(db);
+  notifications = fakeNotificationPort();
 
   const module = db
     .insert(schema.modules)
@@ -29,7 +36,7 @@ beforeEach(() => {
 
   lessonId = db
     .insert(schema.lessons)
-    .values({ moduleId: module.id, title: "Lesson 1", position: 1 })
+    .values({ moduleId: module.id, title: "Closures", position: 1 })
     .returning()
     .get().id;
 
@@ -40,9 +47,10 @@ beforeEach(() => {
     .get().id;
 });
 
-function postQuestion(authorId: number, onLessonId = lessonId) {
-  const result = createComment(
+async function postQuestion(authorId: number, onLessonId = lessonId) {
+  const result = await createComment(
     db,
+    notifications,
     authorId,
     onLessonId,
     null,
@@ -66,9 +74,10 @@ function addStudent(name: string) {
 }
 
 describe("createComment", () => {
-  it("posts a Discussion Question on a lesson, trimmed and stamped with now", () => {
-    const result = createComment(
+  it("posts a Discussion Question on a lesson, trimmed and stamped with now", async () => {
+    const result = await createComment(
       db,
+      notifications,
       base.user.id,
       lessonId,
       null,
@@ -89,11 +98,12 @@ describe("createComment", () => {
     });
   });
 
-  it("posts a Discussion Reply under a Discussion Question", () => {
-    const question = postQuestion(base.user.id);
+  it("posts a Discussion Reply under a Discussion Question", async () => {
+    const question = await postQuestion(base.user.id);
 
-    const result = createComment(
+    const result = await createComment(
       db,
+      notifications,
       base.instructor.id,
       lessonId,
       question.id,
@@ -112,21 +122,49 @@ describe("createComment", () => {
     });
   });
 
-  it.each(["", "   \n\t  "])("rejects an empty body (%j)", (body) => {
-    expect(createComment(db, base.user.id, lessonId, null, body, NOW)).toEqual({
+  it.each(["", "   \n\t  "])("rejects an empty body (%j)", async (body) => {
+    expect(
+      await createComment(
+        db,
+        notifications,
+        base.user.id,
+        lessonId,
+        null,
+        body,
+        NOW
+      )
+    ).toEqual({
       ok: false,
       status: 400,
       error: "Comment cannot be empty",
     });
   });
 
-  it("accepts a body of exactly 5000 characters and rejects 5001", () => {
+  it("accepts a body of exactly 5000 characters and rejects 5001", async () => {
     expect(
-      createComment(db, base.user.id, lessonId, null, "a".repeat(5000), NOW).ok
+      (
+        await createComment(
+          db,
+          notifications,
+          base.user.id,
+          lessonId,
+          null,
+          "a".repeat(5000),
+          NOW
+        )
+      ).ok
     ).toBe(true);
 
     expect(
-      createComment(db, base.user.id, lessonId, null, "a".repeat(5001), NOW)
+      await createComment(
+        db,
+        notifications,
+        base.user.id,
+        lessonId,
+        null,
+        "a".repeat(5001),
+        NOW
+      )
     ).toEqual({
       ok: false,
       status: 400,
@@ -134,24 +172,41 @@ describe("createComment", () => {
     });
   });
 
-  it("rejects a comment on a lesson that does not exist", () => {
+  it("rejects a comment on a lesson that does not exist", async () => {
     expect(
-      createComment(db, base.user.id, lessonId + 999, null, "Hello", NOW)
+      await createComment(
+        db,
+        notifications,
+        base.user.id,
+        lessonId + 999,
+        null,
+        "Hello",
+        NOW
+      )
     ).toEqual({ ok: false, status: 404, error: "Lesson not found" });
   });
 
-  it("rejects a Discussion Reply to a comment that does not exist", () => {
+  it("rejects a Discussion Reply to a comment that does not exist", async () => {
     expect(
-      createComment(db, base.user.id, lessonId, 999, "Replying", NOW)
+      await createComment(
+        db,
+        notifications,
+        base.user.id,
+        lessonId,
+        999,
+        "Replying",
+        NOW
+      )
     ).toEqual({ ok: false, status: 404, error: "Parent comment not found" });
   });
 
-  it("rejects a Discussion Reply whose question is on a different lesson", () => {
-    const questionElsewhere = postQuestion(base.user.id, otherLessonId);
+  it("rejects a Discussion Reply whose question is on a different lesson", async () => {
+    const questionElsewhere = await postQuestion(base.user.id, otherLessonId);
 
     expect(
-      createComment(
+      await createComment(
         db,
+        notifications,
         base.instructor.id,
         lessonId,
         questionElsewhere.id,
@@ -165,10 +220,11 @@ describe("createComment", () => {
     });
   });
 
-  it("rejects a reply to a Discussion Reply, keeping replies one level deep", () => {
-    const question = postQuestion(base.user.id);
-    const reply = createComment(
+  it("rejects a reply to a Discussion Reply, keeping replies one level deep", async () => {
+    const question = await postQuestion(base.user.id);
+    const reply = await createComment(
       db,
+      notifications,
       base.instructor.id,
       lessonId,
       question.id,
@@ -178,7 +234,15 @@ describe("createComment", () => {
     if (!reply.ok) throw new Error(reply.error);
 
     expect(
-      createComment(db, base.user.id, lessonId, reply.comment.id, "Nested", NOW)
+      await createComment(
+        db,
+        notifications,
+        base.user.id,
+        lessonId,
+        reply.comment.id,
+        "Nested",
+        NOW
+      )
     ).toEqual({
       ok: false,
       status: 400,
@@ -187,11 +251,157 @@ describe("createComment", () => {
   });
 });
 
+describe("createComment: Discussion Reply Notification", () => {
+  it("notifies the question's author when someone else replies", async () => {
+    const asker = db
+      .update(schema.users)
+      .set({ avatarUrl: "https://example.com/asker.png" })
+      .where(eq(schema.users.id, base.user.id))
+      .returning()
+      .get();
+    const replier = addStudent("Priya");
+    const question = await postQuestion(asker.id);
+
+    const result = await createComment(
+      db,
+      notifications,
+      replier.id,
+      lessonId,
+      question.id,
+      "  You can capture the variable in a closure, like this example shows.  ",
+      NOW
+    );
+    if (!result.ok) throw new Error(result.error);
+
+    expect(notifications.triggers).toEqual([
+      {
+        notification: "DiscussionReply",
+        recipients: [
+          {
+            id: asker.id,
+            name: "Test User",
+            email: "test@example.com",
+            avatarUrl: "https://example.com/asker.png",
+          },
+        ],
+        actor: {
+          id: replier.id,
+          name: "Priya",
+          email: "priya@example.com",
+          avatarUrl: null,
+        },
+        data: {
+          replierName: "Priya",
+          lessonTitle: "Closures",
+          courseTitle: "Test Course",
+          snippet:
+            "You can capture the variable in a closure, like this example shows.",
+          link: `/courses/test-course/lessons/${lessonId}#comment-${result.comment.id}`,
+          commentId: result.comment.id,
+        },
+        idempotencyKey: `discussion-reply:${result.comment.id}`,
+      },
+    ]);
+  });
+
+  it("sends nothing when the question's author replies to their own question", async () => {
+    const question = await postQuestion(base.user.id);
+
+    const result = await createComment(
+      db,
+      notifications,
+      base.user.id,
+      lessonId,
+      question.id,
+      "Never mind, I worked it out.",
+      NOW
+    );
+
+    expect(result.ok).toBe(true);
+    expect(notifications.triggers).toEqual([]);
+  });
+
+  it("sends nothing for a Discussion Question or a refused reply", async () => {
+    const question = await postQuestion(base.user.id);
+    const replier = addStudent("Priya");
+
+    await createComment(
+      db,
+      notifications,
+      replier.id,
+      lessonId,
+      question.id,
+      "   ",
+      NOW
+    );
+    await createComment(
+      db,
+      notifications,
+      replier.id,
+      otherLessonId,
+      question.id,
+      "Hi",
+      NOW
+    );
+
+    expect(notifications.triggers).toEqual([]);
+  });
+
+  it("puts a one-line snippet of a long reply in the Notification", async () => {
+    const question = await postQuestion(base.user.id);
+    const replier = addStudent("Priya");
+
+    await createComment(
+      db,
+      notifications,
+      replier.id,
+      lessonId,
+      question.id,
+      `First line.\n\nSecond line ${"long ".repeat(100)}`,
+      NOW
+    );
+
+    const [trigger] = notifications.triggers;
+    if (trigger?.notification !== "DiscussionReply") {
+      throw new Error("Expected a Discussion Reply Notification");
+    }
+    expect(trigger.data.snippet).toMatch(/^First line\. Second line long long/);
+    expect(trigger.data.snippet).toMatch(/…$/);
+    expect(trigger.data.snippet.length).toBeLessThanOrEqual(140);
+  });
+
+  it("still saves the reply when the Notification fails, and logs the failure", async () => {
+    const question = await postQuestion(base.user.id);
+    const replier = addStudent("Priya");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failing = {
+      trigger: async () => {
+        throw new Error("Knock is down");
+      },
+    };
+
+    const result = await createComment(
+      db,
+      failing,
+      replier.id,
+      lessonId,
+      question.id,
+      "Here's an answer.",
+      NOW
+    );
+
+    if (!result.ok) throw new Error(result.error);
+    expect(getComment(db, result.comment.id)?.body).toBe("Here's an answer.");
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
+  });
+});
+
 describe("deleteComment", () => {
   const LATER = new Date(2026, 9, 7, 9, 30, 0);
 
-  it("lets an author soft-delete their own comment, stamped with now", () => {
-    const question = postQuestion(base.user.id);
+  it("lets an author soft-delete their own comment, stamped with now", async () => {
+    const question = await postQuestion(base.user.id);
 
     const result = deleteComment(db, question.id, base.user.id, false, LATER);
 
@@ -205,8 +415,8 @@ describe("deleteComment", () => {
     });
   });
 
-  it("lets staff soft-delete someone else's comment", () => {
-    const question = postQuestion(base.user.id);
+  it("lets staff soft-delete someone else's comment", async () => {
+    const question = await postQuestion(base.user.id);
 
     const result = deleteComment(
       db,
@@ -222,8 +432,8 @@ describe("deleteComment", () => {
     });
   });
 
-  it("refuses to let a non-staff user delete someone else's comment", () => {
-    const question = postQuestion(base.user.id);
+  it("refuses to let a non-staff user delete someone else's comment", async () => {
+    const question = await postQuestion(base.user.id);
     const classmate = addStudent("Casey");
 
     expect(deleteComment(db, question.id, classmate.id, false, LATER)).toEqual({
@@ -234,7 +444,7 @@ describe("deleteComment", () => {
     expect(getComment(db, question.id)?.deletedAt).toBeNull();
   });
 
-  it("reports a comment that does not exist", () => {
+  it("reports a comment that does not exist", async () => {
     expect(deleteComment(db, 999, base.user.id, true, LATER)).toEqual({
       ok: false,
       status: 404,
@@ -242,8 +452,8 @@ describe("deleteComment", () => {
     });
   });
 
-  it("leaves an already-deleted comment as it was", () => {
-    const question = postQuestion(base.user.id);
+  it("leaves an already-deleted comment as it was", async () => {
+    const question = await postQuestion(base.user.id);
     deleteComment(db, question.id, base.user.id, false, NOW);
 
     const result = deleteComment(db, question.id, base.user.id, false, LATER);
@@ -258,8 +468,8 @@ describe("deleteComment", () => {
 describe("editComment", () => {
   const LATER = new Date(2026, 9, 7, 9, 30, 0);
 
-  it("lets an author edit their own comment, trimmed and stamped with now", () => {
-    const question = postQuestion(base.user.id);
+  it("lets an author edit their own comment, trimmed and stamped with now", async () => {
+    const question = await postQuestion(base.user.id);
 
     const result = editComment(
       db,
@@ -279,8 +489,8 @@ describe("editComment", () => {
     });
   });
 
-  it("holds an edit to the same body length limits as posting", () => {
-    const question = postQuestion(base.user.id);
+  it("holds an edit to the same body length limits as posting", async () => {
+    const question = await postQuestion(base.user.id);
 
     expect(editComment(db, question.id, base.user.id, "  ", LATER)).toEqual({
       ok: false,
@@ -289,8 +499,8 @@ describe("editComment", () => {
     });
   });
 
-  it("refuses an edit to someone else's comment, even by staff", () => {
-    const question = postQuestion(base.user.id);
+  it("refuses an edit to someone else's comment, even by staff", async () => {
+    const question = await postQuestion(base.user.id);
 
     expect(
       editComment(db, question.id, base.instructor.id, "Rewritten", LATER)
@@ -301,8 +511,8 @@ describe("editComment", () => {
     });
   });
 
-  it("refuses an edit to a deleted comment", () => {
-    const question = postQuestion(base.user.id);
+  it("refuses an edit to a deleted comment", async () => {
+    const question = await postQuestion(base.user.id);
     deleteComment(db, question.id, base.user.id, false, NOW);
 
     expect(
