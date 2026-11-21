@@ -226,6 +226,18 @@ WORKFLOWS=()
 # Discussion Reply: a reply to someone's Discussion Question → its author.
 WORKFLOWS+=("discussion-reply|discussion-replies|**{{ data.replierName }}** replied to your question in {{ data.lessonTitle }}")
 
+# Refund Request confirmation: Cadence → the buyer, once it's raised.
+WORKFLOWS+=("refund-request-confirmation|refund-request-updates|We have your refund request for **{{ data.courseTitle }}** ({{ data.amount }}). It's under review.")
+
+# Open Refund Request: the buyer's new Refund Request → every Platform Admin.
+WORKFLOWS+=("open-refund-request|open-refund-requests|**{{ data.buyerName }}** asked for a refund of {{ data.amount }} on {{ data.courseTitle }}: {{ data.reason }}")
+
+# Refund Request approved: the deciding Platform Admin → the buyer.
+WORKFLOWS+=("refund-request-approved|refund-request-updates|Your refund request for **{{ data.courseTitle }}** ({{ data.amount }}) was approved. {{ data.decisionNote }}")
+
+# Refund Request declined: the deciding Platform Admin → the buyer.
+WORKFLOWS+=("refund-request-declined|refund-request-updates|Your refund request for **{{ data.courseTitle }}** was declined: {{ data.decisionNote }} You can raise a new refund request.")
+
 # ── End of workflow table ─────────────────────────────────────────────────
 
 TOTAL_STAGES=$(( ${#WORKFLOWS[@]} + 2 ))
