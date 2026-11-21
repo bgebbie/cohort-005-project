@@ -8,7 +8,8 @@ import { knockNotificationPort } from "~/lib/knock.server";
 //
 // Adapters:
 // - knockNotificationPort (knock.server.ts): the only code that touches Knock.
-// - fakeNotificationPort: records every trigger and archive, for vitest.
+// - fakeNotificationPort: records every trigger, archive, sync and preference
+//   write, for vitest.
 // - noopNotificationPort: logs instead, when KNOCK_SECRET_API_KEY is absent.
 //
 // Adding a Notification:
@@ -137,8 +138,132 @@ export async function archiveCommentNotifications(
   }
 }
 
-export type FakeNotificationPort = NotificationPort & {
+// ─── User sync and Notification Preferences ───
+// Cadence keeps its users in sync with the vendor (name, email, avatar, so a
+// sender shows correctly in other people's feeds) and owns everyone's
+// Notification Preferences. Role is never synced.
+//
+// Preferences are stored per category × channel. v1 has only the `feed`
+// channel; a later email channel is one more key, with no migration.
+
+/** Where a Notification is delivered. */
+export type NotificationChannel = "feed";
+
+/** A person's full preference set: is each category on, per channel? */
+export type NotificationPreferences = Record<
+  PreferenceCategory,
+  Record<NotificationChannel, boolean>
+>;
+
+/** A preference set as stored, which may lack categories or channels. */
+export type StoredNotificationPreferences = {
+  [C in PreferenceCategory]?: { [Ch in NotificationChannel]?: boolean };
+};
+
+/** Enrollments start off (an Instructor opts in); everything else starts on. */
+export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+  RefundRequestUpdates: { feed: true },
+  OpenRefundRequests: { feed: true },
+  SeatClaims: { feed: true },
+  Enrollments: { feed: false },
+  DiscussionQuestions: { feed: true },
+  DiscussionReplies: { feed: true },
+};
+
+/**
+ * The user side of the server notification port. Kept apart from
+ * NotificationPort so a service that only triggers needs only `trigger`.
+ */
+export interface NotificationUserPort {
+  /** Creates or updates the user (name, email, avatar). */
+  identify(user: NotificationUser): Promise<void>;
+  /** The user's stored preferences, or null when they have none yet. */
+  readPreferences(userId: number): Promise<StoredNotificationPreferences | null>;
+  /** Replaces the user's whole preference set. Merge before calling. */
+  writePreferences(
+    userId: number,
+    preferences: NotificationPreferences
+  ): Promise<void>;
+}
+
+/** Every adapter implements both halves of the server port. */
+export type ServerNotificationPort = NotificationPort & NotificationUserPort;
+
+/**
+ * Syncs a user best-effort: identifies them, then writes the default
+ * preferences only if they have none yet, so a sync never undoes a choice
+ * they made. A failure is logged and never thrown, so it can't fail signup or
+ * a profile edit. Returns whether the sync succeeded.
+ */
+export async function syncUser(
+  port: NotificationUserPort,
+  user: NotificationUser
+): Promise<boolean> {
+  try {
+    await port.identify(user);
+    const existing = await port.readPreferences(user.id);
+    if (existing === null) {
+      await port.writePreferences(user.id, DEFAULT_NOTIFICATION_PREFERENCES);
+    }
+    return true;
+  } catch (error) {
+    console.error(`[notifications] syncing user ${user.id} failed:`, error);
+    return false;
+  }
+}
+
+/** Fills anything a stored set lacks with the default. */
+function withDefaults(
+  stored: StoredNotificationPreferences | null
+): NotificationPreferences {
+  const preferences = structuredClone(DEFAULT_NOTIFICATION_PREFERENCES);
+  for (const category of Object.keys(preferences) as PreferenceCategory[]) {
+    const channels = preferences[category];
+    for (const channel of Object.keys(channels) as NotificationChannel[]) {
+      channels[channel] = stored?.[category]?.[channel] ?? channels[channel];
+    }
+  }
+  return preferences;
+}
+
+/**
+ * A user's Notification Preferences, with the default for any category they
+ * haven't chosen. Throws if the port fails.
+ */
+export async function getNotificationPreferences(
+  port: NotificationUserPort,
+  userId: number
+): Promise<NotificationPreferences> {
+  return withDefaults(await port.readPreferences(userId));
+}
+
+/**
+ * Turns one category on or off for one channel. The port replaces the whole
+ * set, so this reads the current set, changes one value and writes it all
+ * back, leaving every other choice alone. Throws if the port fails, so the
+ * caller can tell the person their choice didn't stick. Returns the saved set.
+ */
+export async function setNotificationPreference(
+  port: NotificationUserPort,
+  userId: number,
+  category: PreferenceCategory,
+  channel: NotificationChannel,
+  enabled: boolean
+): Promise<NotificationPreferences> {
+  const preferences = await getNotificationPreferences(port, userId);
+  preferences[category][channel] = enabled;
+  await port.writePreferences(userId, preferences);
+  return preferences;
+}
+
+export type FakeNotificationPort = ServerNotificationPort & {
   triggers: NotificationTrigger[];
+  /** Every identify, in order. */
+  identified: NotificationUser[];
+  /** Every preference write, in order. */
+  preferenceWrites: { userId: number; preferences: NotificationPreferences }[];
+  /** The stored preference sets. Seed it to give a user existing choices. */
+  preferences: Map<number, StoredNotificationPreferences>;
   /** The comment ids whose Notifications were archived. */
   archives: number[];
 };
@@ -146,8 +271,14 @@ export type FakeNotificationPort = NotificationPort & {
 export function fakeNotificationPort(): FakeNotificationPort {
   const triggers: NotificationTrigger[] = [];
   const archives: number[] = [];
+  const identified: NotificationUser[] = [];
+  const preferenceWrites: FakeNotificationPort["preferenceWrites"] = [];
+  const preferences = new Map<number, StoredNotificationPreferences>();
   return {
     triggers,
+    identified,
+    preferenceWrites,
+    preferences,
     archives,
     async trigger(trigger) {
       triggers.push(trigger);
@@ -155,10 +286,22 @@ export function fakeNotificationPort(): FakeNotificationPort {
     async archiveCommentNotifications(commentId) {
       archives.push(commentId);
     },
+    async identify(user) {
+      identified.push(user);
+    },
+    async readPreferences(userId) {
+      const stored = preferences.get(userId);
+      return stored ? structuredClone(stored) : null;
+    },
+    async writePreferences(userId, set) {
+      preferenceWrites.push({ userId, preferences: structuredClone(set) });
+      preferences.set(userId, structuredClone(set));
+    },
   };
 }
 
-export function noopNotificationPort(): NotificationPort {
+/** Stateless: reads always find no preferences, so callers see the defaults. */
+export function noopNotificationPort(): ServerNotificationPort {
   return {
     async trigger(trigger) {
       console.info(
@@ -172,13 +315,27 @@ export function noopNotificationPort(): NotificationPort {
         `[notifications] no KNOCK_SECRET_API_KEY; would archive comment ${commentId}'s Notifications`
       );
     },
+    async identify(user) {
+      console.info(
+        `[notifications] no KNOCK_SECRET_API_KEY; would sync user ${user.id}`
+      );
+    },
+    async readPreferences() {
+      return null;
+    },
+    async writePreferences(userId, preferences) {
+      console.info(
+        `[notifications] no KNOCK_SECRET_API_KEY; would write preferences for user ${userId}:`,
+        JSON.stringify(preferences)
+      );
+    },
   };
 }
 
-let defaultPort: NotificationPort | undefined;
+let defaultPort: ServerNotificationPort | undefined;
 
 /** Knock when KNOCK_SECRET_API_KEY is set, otherwise the no-op adapter. */
-export function defaultNotificationPort(): NotificationPort {
+export function defaultNotificationPort(): ServerNotificationPort {
   if (!defaultPort) {
     const { secretApiKey } = knockEnv();
     defaultPort = secretApiKey
