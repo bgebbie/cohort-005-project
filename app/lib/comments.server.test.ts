@@ -47,10 +47,11 @@ beforeEach(() => {
     .get().id;
 });
 
+/** Posts a top-level comment; any Notification it causes is kept out of `notifications`. */
 async function postQuestion(authorId: number, onLessonId = lessonId) {
   const result = await createComment(
     db,
-    notifications,
+    fakeNotificationPort(),
     authorId,
     onLessonId,
     null,
@@ -251,6 +252,140 @@ describe("createComment", () => {
   });
 });
 
+describe("createComment: Discussion Question Notification", () => {
+  async function ask(authorId: number, body = "How do closures work?") {
+    const result = await createComment(
+      db,
+      notifications,
+      authorId,
+      lessonId,
+      null,
+      body,
+      NOW
+    );
+    if (!result.ok) throw new Error(result.error);
+    return result.comment;
+  }
+
+  it("notifies the course's Instructor when a Student asks a Discussion Question", async () => {
+    const asker = db
+      .update(schema.users)
+      .set({ avatarUrl: "https://example.com/asker.png" })
+      .where(eq(schema.users.id, base.user.id))
+      .returning()
+      .get();
+
+    const question = await ask(asker.id, "  How do closures work?  ");
+
+    expect(notifications.triggers).toEqual([
+      {
+        notification: "DiscussionQuestion",
+        recipients: [
+          {
+            id: base.instructor.id,
+            name: "Test Instructor",
+            email: "instructor@example.com",
+            avatarUrl: null,
+          },
+        ],
+        actor: {
+          id: asker.id,
+          name: "Test User",
+          email: "test@example.com",
+          avatarUrl: "https://example.com/asker.png",
+        },
+        data: {
+          askerName: "Test User",
+          lessonTitle: "Closures",
+          courseTitle: "Test Course",
+          snippet: "How do closures work?",
+          link: `/courses/test-course/lessons/${lessonId}#comment-${question.id}`,
+          commentId: question.id,
+        },
+        idempotencyKey: `discussion-question:${question.id}`,
+      },
+    ]);
+  });
+
+  it("notifies the course's Instructor when a Platform Admin asks a Discussion Question", async () => {
+    const admin = db
+      .insert(schema.users)
+      .values({
+        name: "Ada Admin",
+        email: "ada@example.com",
+        role: schema.UserRole.Admin,
+      })
+      .returning()
+      .get();
+
+    const question = await ask(admin.id);
+
+    expect(notifications.triggers).toMatchObject([
+      {
+        notification: "DiscussionQuestion",
+        recipients: [{ id: base.instructor.id }],
+        actor: { id: admin.id },
+        data: { askerName: "Ada Admin", commentId: question.id },
+        idempotencyKey: `discussion-question:${question.id}`,
+      },
+    ]);
+  });
+
+  it("notifies the course's Instructor when an Instructor of another course asks", async () => {
+    const otherInstructor = db
+      .insert(schema.users)
+      .values({
+        name: "Olu Other",
+        email: "olu@example.com",
+        role: schema.UserRole.Instructor,
+      })
+      .returning()
+      .get();
+
+    await ask(otherInstructor.id);
+
+    expect(notifications.triggers).toMatchObject([
+      {
+        notification: "DiscussionQuestion",
+        recipients: [{ id: base.instructor.id }],
+        actor: { id: otherInstructor.id },
+      },
+    ]);
+  });
+
+  it("still saves the question when the Notification fails, and logs the failure", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failing = {
+      trigger: async () => {
+        throw new Error("Knock is down");
+      },
+    };
+
+    const result = await createComment(
+      db,
+      failing,
+      base.user.id,
+      lessonId,
+      null,
+      "How do closures work?",
+      NOW
+    );
+
+    if (!result.ok) throw new Error(result.error);
+    expect(getComment(db, result.comment.id)?.body).toBe(
+      "How do closures work?"
+    );
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
+  });
+
+  it("sends nothing when the course's Instructor posts a top-level comment, which isn't a Discussion Question", async () => {
+    await ask(base.instructor.id, "Welcome to the lesson!");
+
+    expect(notifications.triggers).toEqual([]);
+  });
+});
+
 describe("createComment: Discussion Reply Notification", () => {
   it("notifies the question's author when someone else replies", async () => {
     const asker = db
@@ -321,7 +456,24 @@ describe("createComment: Discussion Reply Notification", () => {
     expect(notifications.triggers).toEqual([]);
   });
 
-  it("sends nothing for a Discussion Question or a refused reply", async () => {
+  it("sends nothing for a reply under the course Instructor's top-level comment, which isn't a Discussion Question", async () => {
+    const announcement = await postQuestion(base.instructor.id);
+
+    const result = await createComment(
+      db,
+      notifications,
+      base.user.id,
+      lessonId,
+      announcement.id,
+      "Thanks!",
+      NOW
+    );
+
+    expect(result.ok).toBe(true);
+    expect(notifications.triggers).toEqual([]);
+  });
+
+  it("sends nothing for a refused reply", async () => {
     const question = await postQuestion(base.user.id);
     const replier = addStudent("Priya");
 
