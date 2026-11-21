@@ -1,12 +1,24 @@
-import { and, eq } from "drizzle-orm";
-import { coupons, purchases, enrollments } from "~/db/schema";
+import { and, count, eq, isNull } from "drizzle-orm";
+import { coupons, courses, purchases, enrollments, users } from "~/db/schema";
+import {
+  notify,
+  type NotificationPort,
+  type NotificationUser,
+} from "~/lib/notifications.server";
 import { getSeatAvailability, type Db } from "~/lib/refunds.server";
+
+// ─── Enrollments ───
+// Enrollment from an Individual Purchase, and Seat claims on a Team Licence.
+// See GLOSSARY.md. Every function takes the database first and `now` last; a
+// function that sends Notifications takes the NotificationPort second and
+// sends them after its transaction commits.
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type Queryable = Db | Tx;
 
 type Enrollment = typeof enrollments.$inferSelect;
 type Purchase = typeof purchases.$inferSelect;
+type Seat = typeof coupons.$inferSelect;
 
 function findEnrollment(db: Queryable, userId: number, courseId: number) {
   return db
@@ -88,13 +100,34 @@ export type ClaimSeatResult =
 /**
  * A Student claims a Seat on a Team Licence by its code, which gives them an
  * Enrollment on the course.
+ *
+ * Once the claim commits, the Team Licence's buyer gets a Seat claim
+ * Notification. A refused claim sends nothing.
  */
-export function claimSeat(
+export async function claimSeat(
+  db: Db,
+  notifications: NotificationPort,
+  input: SeatClaimInput,
+  now: Date
+): Promise<ClaimSeatResult> {
+  const claimed = claimSeatInTransaction(db, input, now);
+  if (!claimed.ok) return claimed;
+
+  await notifySeatClaimed(db, notifications, claimed.seat, input.userId);
+
+  return { ok: true, enrollment: claimed.enrollment };
+}
+
+type SeatClaimed =
+  | { ok: true; enrollment: Enrollment; seat: Seat }
+  | { ok: false; error: string };
+
+function claimSeatInTransaction(
   db: Db,
   input: SeatClaimInput,
   now: Date
-): ClaimSeatResult {
-  return db.transaction((tx): ClaimSeatResult => {
+): SeatClaimed {
+  return db.transaction((tx): SeatClaimed => {
     const seat = tx
       .select()
       .from(coupons)
@@ -151,6 +184,72 @@ export function claimSeat(
       .returning()
       .get();
 
-    return { ok: true, enrollment };
+    return { ok: true, enrollment, seat };
   });
+}
+
+/** Sends the Seat claim Notification to the Team Licence's buyer. */
+async function notifySeatClaimed(
+  db: Db,
+  notifications: NotificationPort,
+  seat: Seat,
+  claimerId: number
+) {
+  const teamLicence = db
+    .select({ buyerId: purchases.userId, courseTitle: courses.title })
+    .from(purchases)
+    .innerJoin(courses, eq(courses.id, purchases.courseId))
+    .where(eq(purchases.id, seat.purchaseId))
+    .get();
+  const buyer = teamLicence && getNotificationUser(db, teamLicence.buyerId);
+  const claimer = getNotificationUser(db, claimerId);
+  if (!teamLicence || !buyer || !claimer) return;
+  // Never about the recipient's own action.
+  if (buyer.id === claimer.id) return;
+
+  await notify(notifications, {
+    notification: "SeatClaimed",
+    recipients: [buyer],
+    actor: claimer,
+    data: {
+      claimerName: claimer.name,
+      courseTitle: teamLicence.courseTitle,
+      seatsLeft: countSeatsLeft(db, seat.purchaseId),
+      link: "/team",
+      seatId: seat.id,
+    },
+    idempotencyKey: `seat-claimed:${seat.id}`,
+  });
+}
+
+/** Unclaimed Seats on a Team Licence that can still be claimed. */
+function countSeatsLeft(db: Db, purchaseId: number): number {
+  const row = db
+    .select({ seatsLeft: count() })
+    .from(coupons)
+    .where(
+      and(
+        eq(coupons.purchaseId, purchaseId),
+        isNull(coupons.redeemedByUserId),
+        isNull(coupons.refundedAt)
+      )
+    )
+    .get();
+  return row?.seatsLeft ?? 0;
+}
+
+function getNotificationUser(
+  db: Db,
+  userId: number
+): NotificationUser | undefined {
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      avatarUrl: users.avatarUrl,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
 }
