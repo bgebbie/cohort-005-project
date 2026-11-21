@@ -33,6 +33,10 @@ export const KNOCK_WORKFLOWS: Record<
     workflow: "discussion-reply",
     category: KNOCK_CATEGORIES.DiscussionReplies,
   },
+  DiscussionQuestion: {
+    workflow: "discussion-question",
+    category: KNOCK_CATEGORIES.DiscussionQuestions,
+  },
   SeatClaimed: {
     workflow: "seat-claimed",
     category: KNOCK_CATEGORIES.SeatClaims,

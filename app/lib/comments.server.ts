@@ -57,7 +57,10 @@ function checkBody(body: string): BodyCheck {
  * a Discussion Reply, and the parent must be a top-level comment on the same
  * lesson.
  *
- * A Discussion Reply notifies the question's author, unless they wrote it.
+ * A Discussion Question notifies the course's Instructor. A Discussion Reply
+ * notifies the question's author, unless they wrote it. A reply under the
+ * Instructor's own top-level comment isn't a Discussion Reply and notifies
+ * nobody.
  */
 export async function createComment(
   db: Db,
@@ -114,12 +117,83 @@ export async function createComment(
     .returning()
     .get();
 
-  // Never about the recipient's own action.
-  if (parent && parent.userId !== authorId) {
-    await notifyDiscussionReply(db, notifications, comment, parent.userId);
+  const place = getPlace(db, lessonId);
+  if (!parent) {
+    if (isDiscussionQuestion(comment, place)) {
+      await notifyDiscussionQuestion(db, notifications, comment, place);
+    }
+  } else if (
+    isDiscussionQuestion(parent, place) &&
+    // Never about the recipient's own action.
+    parent.userId !== authorId
+  ) {
+    await notifyDiscussionReply(
+      db,
+      notifications,
+      comment,
+      parent.userId,
+      place
+    );
   }
 
   return { ok: true, comment };
+}
+
+/** A top-level comment by anyone other than the course's Instructor. */
+function isDiscussionQuestion(comment: Comment, place: Place): boolean {
+  return comment.parentId === null && comment.userId !== place.instructorId;
+}
+
+/** Where a comment sits: its lesson and course, and the course's Instructor. */
+type Place = {
+  lessonTitle: string;
+  courseTitle: string;
+  courseSlug: string;
+  instructorId: number;
+};
+
+function getPlace(db: Db, lessonId: number): Place {
+  return db
+    .select({
+      lessonTitle: lessons.title,
+      courseTitle: courses.title,
+      courseSlug: courses.slug,
+      instructorId: courses.instructorId,
+    })
+    .from(lessons)
+    .innerJoin(modules, eq(modules.id, lessons.moduleId))
+    .innerJoin(courses, eq(courses.id, modules.courseId))
+    .where(eq(lessons.id, lessonId))
+    .get()!;
+}
+
+function commentLink(place: Place, comment: Comment): string {
+  return `/courses/${place.courseSlug}/lessons/${comment.lessonId}#${commentAnchor(comment.id)}`;
+}
+
+/** Sends the Discussion Question Notification to the course's Instructor. */
+async function notifyDiscussionQuestion(
+  db: Db,
+  notifications: NotificationPort,
+  question: Comment,
+  place: Place
+) {
+  const asker = getNotificationUser(db, question.userId);
+
+  await notify(notifications, {
+    notification: "DiscussionQuestion",
+    recipients: [getNotificationUser(db, place.instructorId)],
+    actor: asker,
+    data: {
+      askerName: asker.name,
+      lessonTitle: place.lessonTitle,
+      courseTitle: place.courseTitle,
+      snippet: snippet(question.body),
+      link: commentLink(place, question),
+      commentId: question.id,
+    },
+    idempotencyKey: `discussion-question:${question.id}`,
+  });
 }
 
 /** Sends the Discussion Reply Notification to the question's author. */
@@ -127,19 +201,9 @@ async function notifyDiscussionReply(
   db: Db,
   notifications: NotificationPort,
   reply: Comment,
-  questionAuthorId: number
+  questionAuthorId: number,
+  place: Place
 ) {
-  const place = db
-    .select({
-      lessonTitle: lessons.title,
-      courseTitle: courses.title,
-      courseSlug: courses.slug,
-    })
-    .from(lessons)
-    .innerJoin(modules, eq(modules.id, lessons.moduleId))
-    .innerJoin(courses, eq(courses.id, modules.courseId))
-    .where(eq(lessons.id, reply.lessonId))
-    .get()!;
   const replier = getNotificationUser(db, reply.userId);
 
   await notify(notifications, {
@@ -151,7 +215,7 @@ async function notifyDiscussionReply(
       lessonTitle: place.lessonTitle,
       courseTitle: place.courseTitle,
       snippet: snippet(reply.body),
-      link: `/courses/${place.courseSlug}/lessons/${reply.lessonId}#${commentAnchor(reply.id)}`,
+      link: commentLink(place, reply),
       commentId: reply.id,
     },
     idempotencyKey: `discussion-reply:${reply.id}`,
