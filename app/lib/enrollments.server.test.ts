@@ -65,11 +65,12 @@ function purchasesOf(userId: number) {
 }
 
 describe("enrolling after an Individual Purchase", () => {
-  it("records the Purchase and gives the buyer an Enrollment", () => {
+  it("records the Purchase and gives the buyer an Enrollment", async () => {
     const student = addStudent("Ada");
 
-    const result = enrollFromIndividualPurchase(
+    const result = await enrollFromIndividualPurchase(
       db,
+      notifications,
       {
         userId: student.id,
         courseId: base.course.id,
@@ -93,31 +94,182 @@ describe("enrolling after an Individual Purchase", () => {
     ]);
   });
 
-  it("refuses a Student who is already enrolled, recording no Purchase", () => {
+  it("refuses a Student who is already enrolled, recording no Purchase", async () => {
     const student = addStudent("Ada");
-    buy(student.id);
+    await buy(student.id);
 
-    const result = buy(student.id);
+    const result = await buy(student.id);
 
     expect(result).toEqual({ ok: false, reason: "already_enrolled" });
     expect(purchasesOf(student.id)).toHaveLength(1);
     expect(enrollmentsOf(student.id)).toHaveLength(1);
+    // Only the first, successful Enrollment was notified.
+    expect(notifications.triggers).toHaveLength(1);
   });
 
   it("lets a Lapsed Student enroll again", async () => {
     const student = addStudent("Ada");
-    const first = buy(student.id);
+    const first = await buy(student.id);
     if (!first.ok) throw new Error("first purchase refused");
     await lapse(first.purchase.id, student.id);
     expect(enrollmentsOf(student.id)).toHaveLength(0);
 
-    const result = buy(student.id);
+    const result = await buy(student.id);
 
     expect(result.ok).toBe(true);
     expect(purchasesOf(student.id)).toHaveLength(2);
     expect(enrollmentsOf(student.id)).toHaveLength(1);
   });
 });
+
+describe("the Enrollment Notification", () => {
+  const instructor = () => ({
+    id: base.instructor.id,
+    name: "Test Instructor",
+    email: "instructor@example.com",
+    avatarUrl: null,
+  });
+
+  it("tells the course's Instructor which Student enrolled through an Individual Purchase", async () => {
+    const student = addStudent("Ada");
+
+    const result = await buy(student.id);
+
+    if (!result.ok) throw new Error("purchase refused");
+    expect(notifications.triggers).toEqual([
+      {
+        notification: "NewEnrollment",
+        recipients: [instructor()],
+        actor: {
+          id: student.id,
+          name: "Ada",
+          email: "ada@example.com",
+          avatarUrl: null,
+        },
+        data: {
+          studentName: "Ada",
+          courseTitle: "Test Course",
+          link: `/instructor/${base.course.id}/students`,
+          enrollmentId: result.enrollment.id,
+        },
+        idempotencyKey: `new-enrollment:${result.enrollment.id}`,
+      },
+    ]);
+  });
+
+  it("tells the course's Instructor which Student enrolled by claiming a Seat", async () => {
+    const teamAdmin = addStudent("Tess");
+    const student = addStudent("Ada");
+    const [seat] = buySeats(teamAdmin.id, 2, null);
+
+    const result = await claim(seat.code, student.id, null);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(enrollmentNotifications()).toEqual([
+      {
+        notification: "NewEnrollment",
+        recipients: [instructor()],
+        actor: {
+          id: student.id,
+          name: "Ada",
+          email: "ada@example.com",
+          avatarUrl: null,
+        },
+        data: {
+          studentName: "Ada",
+          courseTitle: "Test Course",
+          link: `/instructor/${base.course.id}/students`,
+          enrollmentId: result.enrollment.id,
+        },
+        idempotencyKey: `new-enrollment:${result.enrollment.id}`,
+      },
+    ]);
+  });
+
+  it("is not sent for buying a Team Licence, only for each Seat claimed", async () => {
+    const teamAdmin = addStudent("Tess");
+    const student = addStudent("Ada");
+    const [seat] = buySeats(teamAdmin.id, 3, null);
+    expect(notifications.triggers).toEqual([]);
+
+    await claim(seat.code, student.id, null);
+
+    expect(enrollmentNotifications().map((t) => t.actor?.id)).toEqual([
+      student.id,
+    ]);
+  });
+
+  it("tells the Instructor when a Lapsed Student enrolls again, under a new key", async () => {
+    const student = addStudent("Ada");
+    const first = await buy(student.id);
+    if (!first.ok) throw new Error("first purchase refused");
+    await lapse(first.purchase.id, student.id);
+
+    const again = await buy(student.id);
+
+    if (!again.ok) throw new Error("second purchase refused");
+    const keys = enrollmentNotifications().map((t) => t.idempotencyKey);
+    expect(keys).toEqual([
+      `new-enrollment:${first.enrollment.id}`,
+      `new-enrollment:${again.enrollment.id}`,
+    ]);
+    expect(keys[0]).not.toEqual(keys[1]);
+  });
+
+  it("tells the Instructor when a Lapsed Student enrolls again by claiming a Seat", async () => {
+    const teamAdmin = addStudent("Tess");
+    const student = addStudent("Ada");
+    const first = await buy(student.id);
+    if (!first.ok) throw new Error("purchase refused");
+    await lapse(first.purchase.id, student.id);
+    const [seat] = buySeats(teamAdmin.id, 1, null);
+
+    const again = await claim(seat.code, student.id, null);
+
+    if (!again.ok) throw new Error(again.error);
+    expect(enrollmentNotifications().map((t) => t.idempotencyKey)).toEqual([
+      `new-enrollment:${first.enrollment.id}`,
+      `new-enrollment:${again.enrollment.id}`,
+    ]);
+    expect(again.enrollment.id).not.toEqual(first.enrollment.id);
+  });
+
+  it("is not sent when the Instructor enrolls on their own course", async () => {
+    const result = await buy(base.instructor.id);
+
+    expect(result.ok).toBe(true);
+    expect(notifications.triggers).toEqual([]);
+  });
+
+  it("still enrolls the Student when the Notification fails, and logs the failure", async () => {
+    const student = addStudent("Ada");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failing: NotificationPort = {
+      ...fakeNotificationPort(),
+      trigger: async () => {
+        throw new Error("Knock is down");
+      },
+    };
+
+    const result = await buy(student.id, 7900, failing);
+
+    expect(result.ok).toBe(true);
+    expect(purchasesOf(student.id)).toHaveLength(1);
+    expect(enrollmentsOf(student.id)).toHaveLength(1);
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
+  });
+});
+
+function enrollmentNotifications() {
+  return notifications.triggers.filter(
+    (t) => t.notification === "NewEnrollment"
+  );
+}
+
+function seatClaimNotifications() {
+  return notifications.triggers.filter((t) => t.notification === "SeatClaimed");
+}
 
 describe("claiming a Seat", () => {
   it("claims the Seat for the Student and gives them an Enrollment", async () => {
@@ -155,7 +307,12 @@ describe("claiming a Seat", () => {
     expect(getSeat(seat.id)?.redeemedByUserId).toBe(first.id);
     expect(enrollmentsOf(second.id)).toHaveLength(0);
     // Only the first, successful claim was notified.
-    expect(notifications.triggers.map((t) => t.actor?.id)).toEqual([first.id]);
+    expect(seatClaimNotifications().map((t) => t.actor?.id)).toEqual([
+      first.id,
+    ]);
+    expect(enrollmentNotifications().map((t) => t.actor?.id)).toEqual([
+      first.id,
+    ]);
   });
 
   it("refuses a Seat on hold while its Team Licence has an Open Refund Request", async () => {
@@ -198,7 +355,7 @@ describe("claiming a Seat", () => {
   it("refuses a Student who is already enrolled on the course", async () => {
     const teamAdmin = addStudent("Tess");
     const student = addStudent("Ada");
-    buy(student.id);
+    await buy(student.id, 7900, fakeNotificationPort());
     const [seat] = buySeats(teamAdmin.id, 1, null);
 
     const result = await claim(seat.code, student.id, null);
@@ -259,7 +416,7 @@ describe("claiming a Seat", () => {
   it("lets a Lapsed Student enroll again by claiming a Seat", async () => {
     const teamAdmin = addStudent("Tess");
     const student = addStudent("Ada");
-    const bought = buy(student.id);
+    const bought = await buy(student.id);
     if (!bought.ok) throw new Error("purchase refused");
     await lapse(bought.purchase.id, student.id);
     const [seat] = buySeats(teamAdmin.id, 1, null);
@@ -281,7 +438,7 @@ describe("the Seat claim Notification", () => {
     const result = await claim(seat.code, student.id, null);
 
     expect(result.ok).toBe(true);
-    expect(notifications.triggers).toEqual([
+    expect(seatClaimNotifications()).toEqual([
       {
         notification: "SeatClaimed",
         recipients: [
@@ -318,7 +475,7 @@ describe("the Seat claim Notification", () => {
     await claim(last.code, addStudent("Bob").id, null);
 
     expect(
-      notifications.triggers.map((t) => [
+      seatClaimNotifications().map((t) => [
         t.idempotencyKey,
         t.notification === "SeatClaimed" && t.data.seatsLeft,
       ])
@@ -328,14 +485,18 @@ describe("the Seat claim Notification", () => {
     ]);
   });
 
-  it("sends nothing when the buyer claims a Seat on their own Team Licence", async () => {
+  it("is not sent when the buyer claims a Seat on their own Team Licence", async () => {
     const teamAdmin = addStudent("Tess");
     const [seat] = buySeats(teamAdmin.id, 2, null);
 
     const result = await claim(seat.code, teamAdmin.id, null);
 
     expect(result.ok).toBe(true);
-    expect(notifications.triggers).toEqual([]);
+    expect(seatClaimNotifications()).toEqual([]);
+    // The Instructor still hears of the buyer's new Enrollment.
+    expect(enrollmentNotifications().map((t) => t.actor?.id)).toEqual([
+      teamAdmin.id,
+    ]);
   });
 
   it("still claims the Seat when the Notification fails, and logs the failure", async () => {
@@ -451,9 +612,14 @@ async function lapse(purchaseId: number, buyerId: number) {
   if (!approved.ok) throw new Error(approved.error);
 }
 
-function buy(userId: number, amountPaid = 7900) {
+function buy(
+  userId: number,
+  amountPaid = 7900,
+  port: NotificationPort = notifications
+) {
   return enrollFromIndividualPurchase(
     db,
+    port,
     { userId, courseId: base.course.id, amountPaid, country: null },
     NOW
   );

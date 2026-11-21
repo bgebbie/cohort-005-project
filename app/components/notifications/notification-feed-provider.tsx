@@ -12,6 +12,7 @@ import {
   type NotificationFeed,
   type NotificationFeedSnapshot,
 } from "~/lib/notification-feed";
+import { refreshFeedUserToken } from "~/lib/notification-feed-token";
 
 const EMPTY_FEED = emptyNotificationFeed();
 const LOADING_FEED = emptyNotificationFeed({ loading: true });
@@ -25,7 +26,9 @@ const NotificationFeedContext = createContext<NotificationFeed | null>(null);
  * it belongs to: a new person disposes the old feed and connects a new one,
  * and the old person's Notifications are never shown in between. A fresh
  * token for the same person (the layout re-signs on every navigation) doesn't
- * reconnect; Knock picks it up when the current one nears expiry.
+ * reconnect. Shortly before the current token expires, Knock asks for a new
+ * one: it's fetched from the server, so a tab left idle for hours keeps its
+ * live connection.
  */
 export function NotificationFeedProvider({
   signedIn,
@@ -60,10 +63,15 @@ export function NotificationFeedProvider({
     import("~/lib/knock-feed")
       .then(({ knockNotificationFeed }) => {
         if (cancelled) return;
-        feed = knockNotificationFeed(
-          initial,
-          () => latestConfig.current?.userToken ?? initial.userToken
-        );
+        feed = knockNotificationFeed(initial, async () => {
+          const fresh = await refreshFeedUserToken(initial.knockUserId);
+          if (fresh) return fresh;
+          // Knock ignores this unless a navigation has signed a newer one.
+          const latest = latestConfig.current;
+          return latest?.knockUserId === initial.knockUserId
+            ? latest.userToken
+            : undefined;
+        });
         setConnected({ key: feedKey, feed });
       })
       .catch((error: unknown) => {
