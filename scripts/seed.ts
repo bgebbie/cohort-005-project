@@ -72,6 +72,8 @@ async function seed() {
 
   // Drop and recreate tables for a clean seed
   sqlite.exec(`
+    DROP TABLE IF EXISTS bookmarks;
+    DROP TABLE IF EXISTS notes;
     DROP TABLE IF EXISTS comments;
     DROP TABLE IF EXISTS course_ratings;
     DROP TABLE IF EXISTS video_watch_events;
@@ -2001,6 +2003,67 @@ This course is still in draft while the cluster examples are rewritten against t
     `Created ${countRows(schema.comments)} lesson comments across ${countRows(schema.comments, isNull(schema.comments.parentId))} threads.`
   );
 
+  // ─── Bookmarks and Notes ───
+  // Private to the Student who made them, so they show only on that Student's
+  // own Lesson pages and Saved page. students[0] has a few of each (one Note
+  // edited after it was written); students[1] has one of each, so the Saved
+  // page can be checked for leaking another Student's rows.
+
+  db.insert(schema.bookmarks)
+    .values([
+      {
+        userId: students[0].id,
+        lessonId: course1LessonIds[2],
+        createdAt: daysAgo(30),
+      },
+      {
+        userId: students[0].id,
+        lessonId: course1LessonIds[4],
+        createdAt: daysAgo(12),
+      },
+      {
+        userId: students[0].id,
+        lessonId: course1LessonIds[1],
+        createdAt: daysAgo(2),
+      },
+      {
+        userId: students[1].id,
+        lessonId: course1LessonIds[2],
+        createdAt: daysAgo(9),
+      },
+    ])
+    .run();
+
+  db.insert(schema.notes)
+    .values([
+      {
+        userId: students[0].id,
+        lessonId: course1LessonIds[2],
+        body: "Use `npx tsc`, not a global install.\nRe-watch from 4:10 for the tsconfig walkthrough.",
+        createdAt: daysAgo(30),
+        updatedAt: daysAgo(3),
+      },
+      {
+        userId: students[0].id,
+        lessonId: course1LessonIds[4],
+        body: "# not a heading — Notes stay plain text\n*Generics*: come back to this.",
+        createdAt: daysAgo(12),
+        updatedAt: daysAgo(12),
+      },
+      {
+        userId: students[1].id,
+        lessonId: course1LessonIds[2],
+        body: "Still unsure why strict mode flags this.",
+        createdAt: daysAgo(9),
+        updatedAt: daysAgo(9),
+      },
+    ])
+    .run();
+
+  console.log(
+    `Created ${countRows(schema.bookmarks)} bookmarks and ${countRows(schema.notes)} notes.`
+  );
+
   // ─── Lesson Progress ───
 
   // Helper to mark lessons as complete
@@ -2847,6 +2910,9 @@ This course is still in draft while the cluster examples are rewritten against t
   console.log(`  Enrollments: ${countRows(schema.enrollments)}`);
   console.log(`  Course ratings: ${countRows(schema.courseRatings)}`);
   console.log(`  Lesson comments: ${countRows(schema.comments)}`);
+  console.log(
+    `  Bookmarks: ${countRows(schema.bookmarks)}, notes: ${countRows(schema.notes)}`
+  );
   console.log(
     `  Lesson progress: ${countRows(schema.lessonProgress)} (${countRows(schema.lessonProgress, eq(schema.lessonProgress.status, LessonProgressStatus.Completed))} completed)`
   );
