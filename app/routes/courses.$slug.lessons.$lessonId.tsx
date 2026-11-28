@@ -950,6 +950,13 @@ export async function action({ params, request }: Route.ActionArgs) {
     return { ok: true };
   }
 
+  // Progress and quiz intents re-check access too: scoring a quiz returns its
+  // answer key, so it must not be reachable without the course's content.
+  if (intent === "mark-complete" || intent === "submit-quiz") {
+    await requireContentAccess(request, course.id);
+    requireLessonInCourse(lessonId, course.id);
+  }
+
   if (intent === "mark-complete") {
     markLessonComplete(currentUserId, lessonId);
     return { success: true };
@@ -959,6 +966,12 @@ export async function action({ params, request }: Route.ActionArgs) {
     const quizId = Number(formData.get("quizId"));
     if (isNaN(quizId)) {
       throw data("Invalid quiz ID", { status: 400 });
+    }
+    // Scope the quiz to this lesson so another course's answer key can't be
+    // reached by posting its id to this route.
+    const quiz = db.select().from(quizzes).where(eq(quizzes.id, quizId)).get();
+    if (!quiz || quiz.lessonId !== lessonId) {
+      throw data("Quiz not found", { status: 404 });
     }
 
     // Collect answers: form fields named "question-{questionId}" with value = optionId
